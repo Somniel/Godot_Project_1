@@ -17,10 +17,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install system dependencies
+      - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y fontconfig fonts-dejavu
+          sudo apt-get install -y xvfb
 
       - name: Setup Godot
         uses: chickensoft-games/setup-godot@v2
@@ -32,16 +32,17 @@ jobs:
         run: godot --version
 
       - name: Import project
-        run: godot --headless --import
+        run: xvfb-run godot --headless --import
         timeout-minutes: 5
 
       - name: Run GUT tests
         run: |
-          godot --headless --audio-driver Dummy -s addons/gut/gut_cmdln.gd \
+          xvfb-run godot --headless -s addons/gut/gut_cmdln.gd \
             -gdir=res://tests/ \
             -ginclude_subdirs \
             -gexit \
-            -glog=1
+            -glog=1 \
+            -gconfig=res://.gutconfig.json
         timeout-minutes: 10
 
   lint:
