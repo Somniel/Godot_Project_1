@@ -63,20 +63,22 @@ func _setup_gui(show_gui):
 		_gui.gut = gut
 		var printer = gut.logger.get_printer('gui')
 		printer.set_textbox(_gui.get_textbox())
+
+		# Only configure GUI appearance when actually showing it
+		# This prevents font loading errors in headless mode
+		var opts = gut_config.options
+		_gui.set_font_size(opts.font_size)
+		_gui.set_font(opts.font_name)
+		if(opts.font_color != null and opts.font_color.is_valid_html_color()):
+			_gui.set_default_font_color(Color(opts.font_color))
+		if(opts.background_color != null and opts.background_color.is_valid_html_color()):
+			_gui.set_background_color(Color(opts.background_color))
+
+		_gui.set_opacity(min(1.0, float(opts.opacity) / 100))
+		_gui.use_compact_mode(opts.compact_mode)
 	else:
 		gut.logger.disable_printer('gui', true)
 		_gui.visible = false
-
-	var opts = gut_config.options
-	_gui.set_font_size(opts.font_size)
-	_gui.set_font(opts.font_name)
-	if(opts.font_color != null and opts.font_color.is_valid_html_color()):
-		_gui.set_default_font_color(Color(opts.font_color))
-	if(opts.background_color != null and opts.background_color.is_valid_html_color()):
-		_gui.set_background_color(Color(opts.background_color))
-
-	_gui.set_opacity(min(1.0, float(opts.opacity) / 100))
-	_gui.use_compact_mode(opts.compact_mode)
 
 
 func _write_results_for_gut_panel():
