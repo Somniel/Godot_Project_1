@@ -1,0 +1,59 @@
+# Godot 4 generated files
+.godot/
+
+# Exported builds
+*.pck
+*.exe
+*.x86_64
+*.dmg
+*.app/
+export/
+builds/
+
+# Steamworks build output and configuration
+steamworks_output/
+steamworks_build.vdf
+upload_to_steam.bat
+
+# Steam (only at root level, not in addons)
+/steam_appid.txt
+/steam_api64.dll
+/libsteam_api.so
+/libsteam_api.dylib
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+nul
+
+# Temp/backup DLL files
+~*.dll
+*~*.dll
+
+# IDE and editor files
+.vscode/
+*.code-workspace
+.idea/
+*.swp
+*.swo
+*~
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Mono/.NET
+mono_crash.*.json
+.mono/
+data_*/
+
+# Debug
+*.log

@@ -1,0 +1,69 @@
+name: Deploy to Steam
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      description:
+        description: 'Build description for Steam'
+        required: false
+        default: 'Manual build'
+
+env:
+  GODOT_VERSION: "4.5.1"
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Setup Godot
+        uses: chickensoft-games/setup-godot@v2
+        with:
+          version: ${{ env.GODOT_VERSION }}
+          use-dotnet: false
+          include-templates: true
+
+      - name: Import project
+        run: godot --headless --import
+        timeout-minutes: 5
+
+      - name: Create builds directory
+        run: mkdir -p builds/windows
+
+      - name: Export Windows build
+        run: |
+          godot --headless --export-release "Windows" builds/windows/SteamMultiplayerPoC.exe
+        timeout-minutes: 10
+
+      - name: Copy Steam API DLL
+        run: |
+          cp addons/godotsteam/win64/steam_api64.dll builds/windows/
+
+      - name: Generate build description
+        id: build_desc
+        run: |
+          if [ "${{ github.event_name }}" == "release" ]; then
+            echo "description=${{ github.event.release.tag_name }} - ${{ github.event.release.name }}" >> $GITHUB_OUTPUT
+          else
+            echo "description=${{ github.event.inputs.description || 'CI Build' }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Deploy to Steam
+        uses: game-ci/steam-deploy@v3
+        with:
+          username: ${{ secrets.STEAM_USERNAME }}
+          configVdf: ${{ secrets.STEAM_CONFIG_VDF }}
+          appId: ${{ secrets.STEAM_APP_ID }}
+          buildDescription: ${{ steps.build_desc.outputs.description }}
+          rootPath: builds
+          depot1Path: windows
+          releaseBranch: beta
+        env:
+          STEAM_DEPOT_1: ${{ secrets.STEAM_DEPOT_WINDOWS }}

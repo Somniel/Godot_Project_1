@@ -1,0 +1,25 @@
+repos:
+  - repo: https://github.com/Scony/godot-gdscript-toolkit
+    rev: 4.2.2
+    hooks:
+      - id: gdformat
+        name: gdformat
+        description: Format GDScript files
+        types: [file]
+        files: \.(gd)$
+      - id: gdlint
+        name: gdlint
+        description: Lint GDScript files
+        types: [file]
+        files: \.(gd)$
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: \.(gd|tscn|tres)$
+      - id: end-of-file-fixer
+        exclude: \.(tscn|tres)$
+      - id: check-yaml
+      - id: check-added-large-files
+        args: ['--maxkb=1000']

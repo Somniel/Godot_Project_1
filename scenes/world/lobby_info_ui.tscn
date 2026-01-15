@@ -1,0 +1,73 @@
+[gd_scene load_steps=2 format=3 uid="uid://lobby_info_ui"]
+
+[ext_resource type="Script" path="res://scenes/world/lobby_info_ui.gd" id="1_lobby_info_ui"]
+
+[node name="LobbyInfoUI" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_lobby_info_ui")
+
+[node name="Panel" type="Panel" parent="."]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -200.0
+offset_top = -175.0
+offset_right = 200.0
+offset_bottom = 175.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="VBoxContainer" type="VBoxContainer" parent="Panel"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 10.0
+offset_top = 10.0
+offset_right = -10.0
+offset_bottom = -10.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Title" type="Label" parent="Panel/VBoxContainer"]
+layout_mode = 2
+text = "Lobby Information"
+horizontal_alignment = 1
+
+[node name="HSeparator" type="HSeparator" parent="Panel/VBoxContainer"]
+layout_mode = 2
+
+[node name="LobbyIdLabel" type="Label" parent="Panel/VBoxContainer"]
+layout_mode = 2
+text = "Lobby ID: 0"
+
+[node name="PlayersLabel" type="Label" parent="Panel/VBoxContainer"]
+layout_mode = 2
+text = "Connected Players:"
+
+[node name="PlayersList" type="ItemList" parent="Panel/VBoxContainer"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="ButtonContainer" type="HBoxContainer" parent="Panel/VBoxContainer"]
+layout_mode = 2
+alignment = 1
+
+[node name="RefreshButton" type="Button" parent="Panel/VBoxContainer/ButtonContainer"]
+layout_mode = 2
+text = "Refresh"
+
+[node name="CloseButton" type="Button" parent="Panel/VBoxContainer/ButtonContainer"]
+layout_mode = 2
+text = "Close"
+
+[connection signal="pressed" from="Panel/VBoxContainer/ButtonContainer/RefreshButton" to="." method="_on_refresh_button_pressed"]
+[connection signal="pressed" from="Panel/VBoxContainer/ButtonContainer/CloseButton" to="." method="_on_close_button_pressed"]

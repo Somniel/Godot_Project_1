@@ -1,0 +1,33 @@
+@echo off
+REM Steam Build Upload Script
+REM
+REM Setup Instructions:
+REM 1. Copy this file to upload_to_steam.bat
+REM 2. Set the STEAMCMD_PATH environment variable to your steamcmd.exe location
+REM    Or modify the path below directly
+REM 3. Copy steamworks_build.vdf.template to steamworks_build.vdf
+REM 4. Update steamworks_build.vdf with your App ID and Depot ID
+REM 5. Run this script to upload your build
+
+set STEAMCMD_PATH=%STEAMCMD_PATH%
+set BUILD_VDF=%~dp0steamworks_build.vdf
+
+if "%STEAMCMD_PATH%"=="" (
+    echo ERROR: STEAMCMD_PATH environment variable is not set.
+    echo Please set it to the path of your steamcmd.exe
+    echo Example: set STEAMCMD_PATH=C:\steamcmd\steamcmd.exe
+    exit /b 1
+)
+
+if not exist "%BUILD_VDF%" (
+    echo ERROR: steamworks_build.vdf not found.
+    echo Please copy steamworks_build.vdf.template to steamworks_build.vdf
+    echo and configure it with your App ID and Depot ID.
+    exit /b 1
+)
+
+echo Uploading build to Steam...
+"%STEAMCMD_PATH%" +login %USERNAME% +run_app_build "%BUILD_VDF%" +quit
+
+echo Done!
+pause

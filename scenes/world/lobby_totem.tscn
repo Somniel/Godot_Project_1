@@ -1,0 +1,38 @@
+[gd_scene load_steps=7 format=3 uid="uid://lobby_totem"]
+
+[ext_resource type="Script" path="res://scenes/world/lobby_totem.gd" id="1_lobby_totem"]
+[ext_resource type="Script" path="res://scripts/interactable.gd" id="2_interactable"]
+[ext_resource type="PackedScene" uid="uid://lobby_info_ui" path="res://scenes/world/lobby_info_ui.tscn" id="3_lobby_info_ui"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_totem"]
+size = Vector3(0.8, 3.6, 0.8)
+
+[sub_resource type="BoxMesh" id="BoxMesh_totem"]
+size = Vector3(0.8, 3.6, 0.8)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_totem"]
+albedo_color = Color(0.4, 0.3, 0.2, 1.0)
+
+[node name="LobbyTotem" type="StaticBody3D"]
+script = ExtResource("1_lobby_totem")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.8, 0)
+shape = SubResource("BoxShape3D_totem")
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.8, 0)
+mesh = SubResource("BoxMesh_totem")
+surface_material_override/0 = SubResource("StandardMaterial3D_totem")
+
+[node name="Interactable" type="Area3D" parent="." node_paths=PackedStringArray()]
+script = ExtResource("2_interactable")
+interaction_type = "Touch"
+object_name = "Totem"
+interaction_radius = 3.0
+prompt_height_offset = 4.0
+
+[node name="UILayer" type="CanvasLayer" parent="."]
+layer = 10
+
+[node name="LobbyInfoUI" parent="UILayer" instance=ExtResource("3_lobby_info_ui")]

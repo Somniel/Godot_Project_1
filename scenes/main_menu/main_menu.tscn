@@ -1,0 +1,121 @@
+[gd_scene load_steps=2 format=3 uid="uid://main_menu"]
+
+[ext_resource type="Script" path="res://scenes/main_menu/main_menu.gd" id="1_main"]
+
+[node name="MainMenu" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_main")
+
+[node name="VBoxContainer" type="VBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -100.0
+offset_top = -75.0
+offset_right = 100.0
+offset_bottom = 75.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Title" type="Label" parent="VBoxContainer"]
+layout_mode = 2
+text = "Steam Multiplayer PoC"
+horizontal_alignment = 1
+
+[node name="HSeparator" type="HSeparator" parent="VBoxContainer"]
+layout_mode = 2
+
+[node name="HostButton" type="Button" parent="VBoxContainer"]
+layout_mode = 2
+text = "Host Server"
+
+[node name="BrowseButton" type="Button" parent="VBoxContainer"]
+layout_mode = 2
+text = "Browse Servers"
+
+[node name="QuitButton" type="Button" parent="VBoxContainer"]
+layout_mode = 2
+text = "Quit"
+
+[node name="StatusLabel" type="Label" parent="VBoxContainer"]
+layout_mode = 2
+horizontal_alignment = 1
+
+[node name="LobbyBrowserPanel" type="Panel" parent="."]
+visible = false
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -200.0
+offset_top = -150.0
+offset_right = 200.0
+offset_bottom = 150.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="VBoxContainer" type="VBoxContainer" parent="LobbyBrowserPanel"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 10.0
+offset_top = 10.0
+offset_right = -10.0
+offset_bottom = -10.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="BrowserTitle" type="Label" parent="LobbyBrowserPanel/VBoxContainer"]
+layout_mode = 2
+text = "Available Servers"
+horizontal_alignment = 1
+
+[node name="HSeparator" type="HSeparator" parent="LobbyBrowserPanel/VBoxContainer"]
+layout_mode = 2
+
+[node name="LobbyList" type="ItemList" parent="LobbyBrowserPanel/VBoxContainer"]
+layout_mode = 2
+size_flags_vertical = 3
+allow_reselect = true
+auto_height = false
+
+[node name="LobbyInfoLabel" type="Label" parent="LobbyBrowserPanel/VBoxContainer"]
+layout_mode = 2
+text = "Select a server to join"
+horizontal_alignment = 1
+
+[node name="ButtonContainer" type="HBoxContainer" parent="LobbyBrowserPanel/VBoxContainer"]
+layout_mode = 2
+alignment = 1
+
+[node name="RefreshButton" type="Button" parent="LobbyBrowserPanel/VBoxContainer/ButtonContainer"]
+layout_mode = 2
+text = "Refresh"
+
+[node name="JoinButton" type="Button" parent="LobbyBrowserPanel/VBoxContainer/ButtonContainer"]
+layout_mode = 2
+disabled = true
+text = "Join"
+
+[node name="BackButton" type="Button" parent="LobbyBrowserPanel/VBoxContainer/ButtonContainer"]
+layout_mode = 2
+text = "Back"
+
+[connection signal="pressed" from="VBoxContainer/HostButton" to="." method="_on_host_button_pressed"]
+[connection signal="pressed" from="VBoxContainer/BrowseButton" to="." method="_on_browse_button_pressed"]
+[connection signal="pressed" from="VBoxContainer/QuitButton" to="." method="_on_quit_button_pressed"]
+[connection signal="item_selected" from="LobbyBrowserPanel/VBoxContainer/LobbyList" to="." method="_on_lobby_list_item_selected"]
+[connection signal="pressed" from="LobbyBrowserPanel/VBoxContainer/ButtonContainer/RefreshButton" to="." method="_on_refresh_button_pressed"]
+[connection signal="pressed" from="LobbyBrowserPanel/VBoxContainer/ButtonContainer/JoinButton" to="." method="_on_join_button_pressed"]
+[connection signal="pressed" from="LobbyBrowserPanel/VBoxContainer/ButtonContainer/BackButton" to="." method="_on_back_button_pressed"]

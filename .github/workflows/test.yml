@@ -1,0 +1,62 @@
+name: Run Tests
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+env:
+  GODOT_VERSION: "4.5.1"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Godot
+        uses: chickensoft-games/setup-godot@v2
+        with:
+          version: ${{ env.GODOT_VERSION }}
+          use-dotnet: false
+
+      - name: Verify Godot installation
+        run: godot --version
+
+      - name: Import project
+        run: godot --headless --import
+        timeout-minutes: 5
+
+      - name: Run GUT tests
+        run: |
+          godot --headless -s addons/gut/gut_cmdln.gd \
+            -gdir=res://tests/ \
+            -gexit \
+            -glog=2
+        timeout-minutes: 10
+
+  lint:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install gdtoolkit
+        run: pip install gdtoolkit
+
+      - name: Run gdlint
+        run: gdlint .
+        continue-on-error: true  # Warning only for now
+
+      - name: Check formatting
+        run: gdformat --check .
+        continue-on-error: true  # Warning only for now
