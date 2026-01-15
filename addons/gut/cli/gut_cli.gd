@@ -2,7 +2,8 @@ extends Node
 
 var Optparse = load('res://addons/gut/cli/optparse.gd')
 var Gut = load('res://addons/gut/gut.gd')
-var GutRunner = load('res://addons/gut/gui/GutRunner.tscn')
+# Lazy-load GutRunner to avoid font loading in headless mode
+var _gut_runner_scene = null
 
 # ------------------------------------------------------------------------------
 # Helper class to resolve the various different places where an option can
@@ -228,7 +229,16 @@ func _run_tests(opt_resolver):
 	_final_opts = opt_resolver.get_resolved_values();
 	_gut_config.options = _final_opts
 
-	var runner = GutRunner.instantiate()
+	# In headless mode, skip GUI runner to avoid font loading errors
+	if DisplayServer.get_name() == "headless":
+		_run_tests_headless()
+		return
+
+	# Lazy-load GutRunner scene only when needed (non-headless)
+	if _gut_runner_scene == null:
+		_gut_runner_scene = load('res://addons/gut/gui/GutRunner.tscn')
+
+	var runner = _gut_runner_scene.instantiate()
 	runner.set_gut_config(_gut_config)
 	get_tree().root.add_child(runner)
 
@@ -236,6 +246,42 @@ func _run_tests(opt_resolver):
 		runner.run_from_editor()
 	else:
 		runner.run_tests()
+
+
+func _run_tests_headless():
+	# Minimal headless test runner without GUI
+	var gut_instance = Gut.new()
+	gut_instance.set_log_level(_gut_config.options.log_level)
+	add_child(gut_instance)
+
+	# Configure from options
+	var opts = _gut_config.options
+	for dir in opts.dirs:
+		gut_instance.add_directory(dir)
+	gut_instance.set_include_subdirectories(opts.include_subdirs)
+	gut_instance.set_prefix(opts.prefix)
+	gut_instance.set_suffix(opts.suffix)
+
+	# Run tests
+	gut_instance.test_scripts()
+
+	# Wait for tests to complete
+	await gut_instance.end_run
+
+	# Output results
+	var summary = gut_instance.get_summary()
+	print("\n" + summary.summarize())
+
+	# Write JUnit XML if configured
+	if opts.junit_xml_file != "":
+		var ResultExporter = load('res://addons/gut/result_exporter.gd')
+		var exporter = ResultExporter.new()
+		exporter.write_junit_xml_file(gut_instance, opts.junit_xml_file)
+
+	# Exit with appropriate code
+	var exit_code = 0 if gut_instance.get_fail_count() == 0 else 1
+	if opts.should_exit or (opts.should_exit_on_success and exit_code == 0):
+		get_tree().quit(exit_code)
 
 
 # parse options and run Gut
