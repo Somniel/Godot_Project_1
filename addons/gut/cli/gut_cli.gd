@@ -250,27 +250,24 @@ func _run_tests(opt_resolver):
 
 func _run_tests_headless():
 	# Minimal headless test runner without GUI
-	var gut_instance = Gut.new()
-	gut_instance.set_log_level(_gut_config.options.log_level)
+	var lgr = GutUtils.get_logger()
+	var gut_instance = Gut.new(lgr)
+	gut_instance.add_children_to = self
 	add_child(gut_instance)
 
-	# Configure from options
-	var opts = _gut_config.options
-	for dir in opts.dirs:
-		gut_instance.add_directory(dir)
-	gut_instance.set_include_subdirectories(opts.include_subdirs)
-	gut_instance.set_prefix(opts.prefix)
-	gut_instance.set_suffix(opts.suffix)
+	# Apply all options from config
+	_gut_config.apply_options(gut_instance)
+
+	# Connect to end signal for cleanup
+	gut_instance.end_run.connect(_on_headless_tests_finished.bind(gut_instance))
 
 	# Run tests
-	gut_instance.test_scripts()
+	var run_rest_of_scripts = _gut_config.options.unit_test_name == ''
+	gut_instance.test_scripts(run_rest_of_scripts)
 
-	# Wait for tests to complete
-	await gut_instance.end_run
 
-	# Output results
-	var summary = gut_instance.get_summary()
-	print("\n" + summary.summarize())
+func _on_headless_tests_finished(gut_instance):
+	var opts = _gut_config.options
 
 	# Write JUnit XML if configured
 	if opts.junit_xml_file != "":
@@ -278,8 +275,10 @@ func _run_tests_headless():
 		var exporter = ResultExporter.new()
 		exporter.write_junit_xml_file(gut_instance, opts.junit_xml_file)
 
-	# Exit with appropriate code
+	# Determine exit code
 	var exit_code = 0 if gut_instance.get_fail_count() == 0 else 1
+
+	# Exit if configured to do so
 	if opts.should_exit or (opts.should_exit_on_success and exit_code == 0):
 		get_tree().quit(exit_code)
 
