@@ -17,6 +17,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y fontconfig fonts-dejavu
+
       - name: Setup Godot
         uses: chickensoft-games/setup-godot@v2
         with:
@@ -32,10 +37,11 @@ jobs:
 
       - name: Run GUT tests
         run: |
-          godot --headless -s addons/gut/gut_cmdln.gd \
+          godot --headless --audio-driver Dummy -s addons/gut/gut_cmdln.gd \
             -gdir=res://tests/ \
+            -ginclude_subdirs \
             -gexit \
-            -glog=2
+            -glog=1
         timeout-minutes: 10
 
   lint:
