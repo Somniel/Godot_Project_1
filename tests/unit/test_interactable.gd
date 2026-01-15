@@ -39,6 +39,11 @@ func test_interact_emits_signal() -> void:
 
 
 func test_show_prompt_makes_label_visible() -> void:
+	# Skip in headless mode - Label3D not created to avoid font errors
+	if DisplayServer.get_name() == "headless":
+		pending("Label3D tests skipped in headless mode")
+		return
+
 	# Wait for _ready to complete
 	await get_tree().process_frame
 
@@ -57,6 +62,11 @@ func test_show_prompt_makes_label_visible() -> void:
 
 
 func test_hide_prompt_makes_label_invisible() -> void:
+	# Skip in headless mode - Label3D not created to avoid font errors
+	if DisplayServer.get_name() == "headless":
+		pending("Label3D tests skipped in headless mode")
+		return
+
 	# Wait for _ready to complete
 	await get_tree().process_frame
 

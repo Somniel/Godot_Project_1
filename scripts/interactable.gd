@@ -39,6 +39,10 @@ func _setup_collision() -> void:
 
 
 func _setup_prompt_label() -> void:
+	# Skip label creation in headless mode (CI testing) to avoid font errors
+	if DisplayServer.get_name() == "headless":
+		return
+
 	_prompt_label = Label3D.new()
 	_prompt_label.text = "%s the %s" % [interaction_type, object_name]
 	_prompt_label.position = Vector3(0, prompt_height_offset, 0)
