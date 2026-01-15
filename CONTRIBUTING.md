@@ -1,5 +1,11 @@
 # Contributing to Steam Multiplayer PoC
 
+> **Notice:** This project is not accepting external contributions. Pull requests from outside collaborators will not be reviewed or merged.
+
+This document is retained for internal development reference only.
+
+---
+
 ## CI/CD Overview
 
 This project uses GitHub Actions for:

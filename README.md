@@ -1,5 +1,7 @@
 # Steam Multiplayer PoC
 
+> **Notice:** This project is publicly visible for reference purposes only. Copying, redistribution, or use of this code is prohibited.
+
 A proof-of-concept for multi-server multiplayer architecture using Godot 4.5 and Steam networking. Players can host servers, join via Steam lobbies, and travel between independently hosted server instances.
 
 ## Tech Stack
@@ -70,4 +72,6 @@ tests/              # GUT unit and integration tests
 
 ## License
 
-This project is private. GUT testing framework is MIT licensed.
+**All Rights Reserved.** This project is publicly visible for reference and educational purposes only. Copying, modification, redistribution, or commercial use of this code is prohibited without explicit written permission.
+
+Third-party components (GodotSteam, GUT) retain their original MIT licenses.
