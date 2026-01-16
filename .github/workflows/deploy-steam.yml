@@ -64,6 +64,6 @@ jobs:
           buildDescription: ${{ steps.build_desc.outputs.description }}
           rootPath: builds
           depot1Path: windows
-          releaseBranch: beta
+          # Build is uploaded only - set live manually via Steamworks
         env:
           STEAM_DEPOT_1: ${{ secrets.STEAM_DEPOT_WINDOWS }}
