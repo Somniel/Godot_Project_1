@@ -40,15 +40,21 @@ func _input(event: InputEvent) -> void:
 	if not is_multiplayer_authority():
 		return
 
-	# Right mouse button for camera rotation
+	# Toggle inventory with Tab
+	if event.is_action_pressed("toggle_inventory"):
+		_toggle_inventory()
+		return
+
+	# Right mouse button for camera rotation (only when inventory is closed)
 	var mouse_button := event as InputEventMouseButton
 	if mouse_button and mouse_button.button_index == MOUSE_BUTTON_RIGHT:
-		_is_rotating_camera = mouse_button.pressed
-		# Capture/release mouse
-		if _is_rotating_camera:
-			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
-		else:
-			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+		if not _is_inventory_open():
+			_is_rotating_camera = mouse_button.pressed
+			# Capture/release mouse
+			if _is_rotating_camera:
+				Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+			else:
+				Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
 	# Mouse motion for camera rotation
 	var mouse_motion := event as InputEventMouseMotion
@@ -58,9 +64,10 @@ func _input(event: InputEvent) -> void:
 		# Clamp vertical rotation
 		_camera.rotation.x = clamp(_camera.rotation.x, deg_to_rad(-80.0), deg_to_rad(80.0))
 
-	# Handle interact input
+	# Handle interact input (only when inventory is closed)
 	if event.is_action_pressed("interact") and _current_interactable:
-		_current_interactable.interact(self)
+		if not _is_inventory_open():
+			_current_interactable.interact(self)
 
 
 func _physics_process(delta: float) -> void:
@@ -217,3 +224,31 @@ func _sync_player_name(player_name: String) -> void:
 		return
 	if _name_label:
 		_name_label.text = Utils.sanitize_display_string(player_name)
+
+
+func _toggle_inventory() -> void:
+	## Toggle the inventory UI open/closed.
+	var world: Node = get_tree().current_scene
+	if world == null:
+		return
+
+	var inventory_ui: InventoryUI = world.get_node_or_null("UI/InventoryUI")
+	if inventory_ui != null:
+		inventory_ui.toggle_inventory()
+
+		# Release camera rotation if opening inventory
+		if inventory_ui.is_open():
+			_is_rotating_camera = false
+			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+
+
+func _is_inventory_open() -> bool:
+	## Check if inventory UI is currently open.
+	var world: Node = get_tree().current_scene
+	if world == null:
+		return false
+
+	var inventory_ui: InventoryUI = world.get_node_or_null("UI/InventoryUI")
+	if inventory_ui != null:
+		return inventory_ui.is_open()
+	return false

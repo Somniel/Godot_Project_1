@@ -2,14 +2,20 @@ extends GutTest
 ## Unit tests for SteamManager autoload.
 
 
-func test_app_id_from_environment() -> void:
-	# APP_ID should be loaded from STEAM_APP_ID environment variable
+func test_app_id_configured() -> void:
+	# APP_ID should be loaded from project settings or STEAM_APP_ID environment variable
+	var project_app_id: int = ProjectSettings.get_setting("steam/initialization/app_id", 0)
 	var env_app_id: String = OS.get_environment("STEAM_APP_ID")
-	if env_app_id.is_empty():
-		# If env var not set, APP_ID should be 0 (uninitialized)
-		assert_eq(SteamManager.APP_ID, 0, "APP_ID should be 0 when env var not set")
-	else:
+
+	if project_app_id > 0:
+		# Project settings takes priority
+		assert_eq(SteamManager.APP_ID, project_app_id, "APP_ID should match project settings")
+	elif not env_app_id.is_empty():
+		# Fall back to environment variable
 		assert_eq(SteamManager.APP_ID, env_app_id.to_int(), "APP_ID should match env var")
+	else:
+		# Neither configured - should be 0
+		assert_eq(SteamManager.APP_ID, 0, "APP_ID should be 0 when not configured")
 
 
 func test_get_steam_id_returns_int() -> void:

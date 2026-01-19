@@ -1,0 +1,38 @@
+[gd_scene load_steps=4 format=3 uid="uid://bpuqsng07e5aa"]
+
+[ext_resource type="PackedScene" uid="uid://worlditem001" path="res://scenes/items/world_item.tscn" id="1_base"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_flame"]
+albedo_color = Color(1.0, 0.5, 0.3, 1.0)
+emission_enabled = true
+emission = Color(1.0, 0.3, 0.1, 1.0)
+emission_energy_multiplier = 0.7
+rim_enabled = true
+rim = 0.4
+rim_tint = 0.3
+
+[sub_resource type="SphereMesh" id="SphereMesh_flame"]
+material = SubResource("StandardMaterial3D_flame")
+radius = 0.1
+height = 0.2
+radial_segments = 32
+rings = 16
+
+[node name="FlamePearl" instance=ExtResource("1_base")]
+item_id = &"flame_pearl"
+quantity = 1
+
+[node name="MeshInstance3D" parent="." index="0"]
+mesh = SubResource("SphereMesh_flame")
+
+[node name="Interactable" parent="." index="2"]
+interaction_type = "Grab"
+object_name = "Flame Pearl"
+interaction_radius = 2.0
+prompt_height_offset = 0.4
+
+[node name="OmniLight3D" parent="." index="3"]
+visible = true
+light_color = Color(1.0, 0.4, 0.2, 1.0)
+light_energy = 1.0
+omni_range = 3.0

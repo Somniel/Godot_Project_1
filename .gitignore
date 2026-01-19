@@ -1,6 +1,9 @@
 # Godot 4 generated files
 .godot/
 
+# Local settings override (not committed - contains dev App ID)
+override.cfg
+
 # Exported builds
 *.pck
 *.exe

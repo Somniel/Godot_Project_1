@@ -16,13 +16,19 @@ var steam_username: String = ""
 
 
 func _init() -> void:
-	# Load App ID from environment variable (required)
-	var env_app_id: String = OS.get_environment("STEAM_APP_ID")
-	if env_app_id.is_empty() or not env_app_id.is_valid_int():
-		push_warning("SteamManager: STEAM_APP_ID environment variable not set or invalid")
-		return
+	# Load App ID from ProjectSettings (can be overridden via override.cfg)
+	# Falls back to environment variable for CI/production builds
+	var project_app_id: int = ProjectSettings.get_setting("steam/initialization/app_id", 0)
 
-	APP_ID = env_app_id.to_int()
+	if project_app_id > 0:
+		APP_ID = project_app_id
+	else:
+		# Fall back to environment variable
+		var env_app_id: String = OS.get_environment("STEAM_APP_ID")
+		if env_app_id.is_empty() or not env_app_id.is_valid_int():
+			push_warning("SteamManager: No Steam App ID configured. Set steam/initialization/app_id in override.cfg or STEAM_APP_ID environment variable.")
+			return
+		APP_ID = env_app_id.to_int()
 
 	# Set environment variables before Steam initializes (required for editor testing)
 	OS.set_environment("SteamAppId", str(APP_ID))

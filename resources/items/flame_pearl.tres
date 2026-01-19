@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="ItemData" load_steps=3 format=3 uid="uid://b47kby4vd3o13"]
+
+[ext_resource type="Script" path="res://resources/item_data.gd" id="1_item"]
+[ext_resource type="PackedScene" uid="uid://flamepearl001" path="res://scenes/items/pearl/flame_pearl.tscn" id="2_scene"]
+
+[resource]
+script = ExtResource("1_item")
+id = &"flame_pearl"
+display_name = "Flame Pearl"
+description = "A small, glowing sphere radiating warm light. Hot to the touch."
+icon = null
+max_stack = 99
+world_scene = ExtResource("2_scene")
+interaction_type = "Grab"
+is_glowing = true
+glow_color = Color(1.0, 0.4, 0.2, 1.0)
+glow_energy = 1.0
+glow_range = 3.0

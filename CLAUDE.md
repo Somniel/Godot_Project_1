@@ -18,13 +18,20 @@ autoload/           # Singleton managers
   steam_manager.gd    - Steam init, callbacks, identity
   lobby_manager.gd    - Create/join/leave/query lobbies
   network_manager.gd  - MultiplayerPeer, RPC routing, travel
+  inventory_manager.gd - Player inventory state, item registry
 
 scenes/
   main_menu/          - Menu, server browser, host options
   world/              - Server scenes, portals
   player/             - Networked player
+  items/              - World item scenes (pearls, etc.)
+  ui/inventory/       - Inventory UI components
 
 scripts/              # Shared utilities and data classes
+  inventory/          - Storage backends (SteamCloud, SteamInventory)
+
+resources/
+  items/              - ItemData definitions (.tres files)
 ```
 
 ## Code Standards
@@ -34,6 +41,10 @@ scripts/              # Shared utilities and data classes
 - **Signals**: past tense naming `player_connected`, `lobby_created`
 - **RPCs**: always specify authority `@rpc("any_peer")` or `@rpc("authority")`
 - **Line length**: max 100 characters
+- **Warnings**: Resolve properly rather than suppress with `@warning_ignore`. Only suppress when:
+  - Unavoidable (e.g., GDExtension dynamic dispatch requires `unsafe_method_access`)
+  - Provably safe but the type system cannot verify it
+  - Always document why suppression is necessary
 - **Escape sequences**: GDScript does not support `\x` hex escapes. Use `char(code)` instead:
   ```gdscript
   # Wrong - parser error
@@ -60,6 +71,43 @@ pre-commit run -a    # Run all pre-commit hooks
 | steam_manager | Steam init, shutdown, local Steam ID only |
 | lobby_manager | Lobby CRUD, metadata, queries only |
 | network_manager | MultiplayerPeer, RPCs, travel coordination |
+| inventory_manager | Player inventory state, item registry, persistence delegation |
+
+### Inventory System
+
+The inventory uses a storage abstraction layer to separate game logic from persistence:
+
+```
+InventoryManager (autoload)
+├── Item registry & slot manipulation
+└── _storage: InventoryStorage
+        ├── SteamCloudStorage (current) - JSON in Steam Cloud
+        └── SteamInventoryStorage (future) - Steam's server-authoritative system
+```
+
+**Files:**
+- `autoload/inventory_manager.gd` - Slot operations, item registry
+- `scripts/inventory/inventory_storage.gd` - Abstract base class
+- `scripts/inventory/steam_cloud_storage.gd` - Current Steam Cloud implementation
+- `scripts/inventory/steam_inventory_storage.gd` - Stub for future Steam Inventory Service
+
+**Switching to Steam Inventory Service:**
+
+When ready to use Steam's server-authoritative inventory:
+
+1. Configure item definitions in Steamworks partner portal
+2. Update `ITEM_DEF_IDS` in `steam_inventory_storage.gd` with actual Steam item IDs
+3. Implement the callback handlers in `steam_inventory_storage.gd`
+4. Change one line in `inventory_manager.gd` `_setup_storage()`:
+   ```gdscript
+   # Change this:
+   _storage = SteamCloudStorage.new()
+   # To this:
+   _storage = SteamInventoryStorage.new()
+   ```
+5. Update item spawning to use `grant_item()` / `consume_item()` instead of direct slot manipulation
+
+**Note:** Steam Inventory Service requires your own App ID configured in Steamworks. Cannot use Spacewar (480) for testing.
 
 ### Multiplayer Patterns
 
