@@ -65,7 +65,7 @@ func _input(event: InputEvent) -> void:
 		_camera.rotation.x = clamp(_camera.rotation.x, deg_to_rad(-80.0), deg_to_rad(80.0))
 
 	# Handle interact input (only when inventory is closed)
-	if event.is_action_pressed("interact") and _current_interactable:
+	if event.is_action_pressed("interact") and _current_interactable and is_instance_valid(_current_interactable):
 		if not _is_inventory_open():
 			_current_interactable.interact(self)
 
@@ -143,7 +143,7 @@ func _setup_interaction() -> void:
 
 
 func _on_interactable_entered(area: Area3D) -> void:
-	if area is Interactable:
+	if area is Interactable and is_instance_valid(area):
 		_nearby_interactables.append(area)
 		_update_current_interactable()
 
@@ -155,6 +155,13 @@ func _on_interactable_exited(area: Area3D) -> void:
 
 
 func _update_current_interactable() -> void:
+	# Filter out any invalid (freed) interactables to prevent accessing freed nodes
+	var valid_interactables: Array[Interactable] = []
+	for interactable: Interactable in _nearby_interactables:
+		if is_instance_valid(interactable):
+			valid_interactables.append(interactable)
+	_nearby_interactables = valid_interactables
+
 	var previous_interactable: Interactable = _current_interactable
 
 	if _nearby_interactables.is_empty():
@@ -172,9 +179,9 @@ func _update_current_interactable() -> void:
 
 	# Update prompt visibility on interactables and player hotkey label
 	if previous_interactable != _current_interactable:
-		if previous_interactable:
+		if previous_interactable and is_instance_valid(previous_interactable):
 			previous_interactable.hide_prompt()
-		if _current_interactable:
+		if _current_interactable and is_instance_valid(_current_interactable):
 			_current_interactable.show_prompt()
 
 		# Show/hide hotkey label above player
