@@ -9,6 +9,23 @@ func before_all() -> void:
 		pending("Steam not initialized - skipping integration tests")
 
 
+func after_each() -> void:
+	# Mark Steam Cloud warnings as handled - these are from InventoryManager autoload
+	# and are unrelated to lobby tests
+	_handle_steam_cloud_errors()
+
+
+func _handle_steam_cloud_errors() -> void:
+	## Mark Steam Cloud-related errors as handled since they're not relevant to lobby tests.
+	var errors: Array = get_errors()
+	for err: Variant in errors:
+		if err.has_method("contains_text"):
+			@warning_ignore("unsafe_method_access")
+			if err.contains_text("SteamCloudStorage") or err.contains_text("fileWrite failed"):
+				@warning_ignore("unsafe_property_access")
+				err.handled = true
+
+
 func test_create_and_leave_lobby() -> void:
 	if not SteamManager.is_steam_initialized:
 		pending("Steam not initialized")

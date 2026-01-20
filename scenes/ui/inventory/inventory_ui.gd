@@ -266,6 +266,11 @@ func _try_place_into_slot(slot_index: int) -> void:
 	if not _held_item.is_holding():
 		return
 
+	# Placing back into source slot (not from split) - just place without merging
+	if slot_index == _held_source_slot and not _held_from_split:
+		_place_held_into_slot(slot_index)
+		return
+
 	var target_slot_data: Dictionary = InventoryManager.get_slot(slot_index)
 
 	if target_slot_data.is_empty():

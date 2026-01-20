@@ -101,6 +101,13 @@ func load_inventory() -> void:
 		return
 
 	var json_string: String = buffer.get_string_from_utf8()
+
+	# Check for empty or whitespace-only string before parsing
+	if json_string.strip_edges().is_empty():
+		_initialize_empty()
+		load_completed.emit(true)
+		return
+
 	var parsed: Variant = JSON.parse_string(json_string)
 
 	if parsed is Dictionary:
