@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="ItemData" load_steps=3 format=3 uid="uid://lifepearl002"]
+
+[ext_resource type="Script" path="res://resources/item_data.gd" id="1_item"]
+[ext_resource type="PackedScene" uid="uid://lifepearl001" path="res://scenes/items/pearl/life_pearl.tscn" id="2_scene"]
+
+[resource]
+script = ExtResource("1_item")
+id = &"life_pearl"
+display_name = "Life Pearl"
+description = "A small, glowing sphere pulsing with verdant energy. Warm and vibrant."
+icon = null
+max_stack = 99
+world_scene = ExtResource("2_scene")
+interaction_type = "Grab"
+is_glowing = true
+glow_color = Color(0.4, 0.9, 0.3, 1.0)
+glow_energy = 0.9
+glow_range = 2.8

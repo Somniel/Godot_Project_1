@@ -8,6 +8,7 @@ signal lobby_joined(lobby_id: int)
 signal lobby_join_failed(reason: String)
 signal lobby_left
 signal lobby_list_received(lobbies: Array)
+signal lobby_data_received(lobby_id: int, success: bool)
 
 ## Lobby type constants from Steam API
 const LOBBY_TYPE_PRIVATE: int = 0
@@ -24,6 +25,7 @@ const LOBBY_DISTANCE_WORLDWIDE: int = 3
 var current_lobby_id: int = 0
 var is_host: bool = false
 var _steam: Object = null
+var _pending_lobby_data_requests: Array[int] = []
 
 
 func _ready() -> void:
@@ -46,6 +48,8 @@ func _on_steam_initialized() -> void:
 	_steam.lobby_joined.connect(_on_lobby_joined)
 	@warning_ignore("unsafe_property_access", "unsafe_method_access", "return_value_discarded")
 	_steam.lobby_match_list.connect(_on_lobby_match_list)
+	@warning_ignore("unsafe_property_access", "unsafe_method_access", "return_value_discarded")
+	_steam.lobby_data_update.connect(_on_lobby_data_update)
 
 
 func create_lobby(max_players: int = 8) -> void:
@@ -144,6 +148,31 @@ func get_lobby_members(lobby_id: int) -> Array[int]:
 	return members
 
 
+func request_lobby_data(lobby_id: int) -> void:
+	## Request data for a lobby to check if it still exists.
+	## Emits lobby_data_received when complete.
+	if _steam == null:
+		lobby_data_received.emit(lobby_id, false)
+		return
+
+	if lobby_id <= 0:
+		lobby_data_received.emit(lobby_id, false)
+		return
+
+	print("LobbyManager: Requesting data for lobby %d" % lobby_id)
+	_pending_lobby_data_requests.append(lobby_id)
+	@warning_ignore("unsafe_method_access")
+	var success: bool = _steam.requestLobbyData(lobby_id)
+	if not success:
+		_pending_lobby_data_requests.erase(lobby_id)
+		lobby_data_received.emit(lobby_id, false)
+
+
+func is_lobby_data_pending(lobby_id: int) -> bool:
+	## Check if we're waiting for data from a specific lobby.
+	return lobby_id in _pending_lobby_data_requests
+
+
 # Steam callback handlers
 
 func _on_lobby_created(result: int, lobby_id: int) -> void:
@@ -181,3 +210,13 @@ func _on_lobby_joined(lobby_id: int, _permissions: int, _locked: bool, response:
 func _on_lobby_match_list(lobbies: Array) -> void:
 	print("LobbyManager: Found %d lobbies" % lobbies.size())
 	lobby_list_received.emit(lobbies)
+
+
+func _on_lobby_data_update(success: int, lobby_id: int, _member_id: int) -> void:
+	## Called when lobby data is received or fails.
+	## success: 1 = success, 0 = failure (lobby doesn't exist or is not visible)
+	if lobby_id in _pending_lobby_data_requests:
+		_pending_lobby_data_requests.erase(lobby_id)
+		var exists: bool = (success == 1)
+		print("LobbyManager: Lobby %d data received (exists: %s)" % [lobby_id, exists])
+		lobby_data_received.emit(lobby_id, exists)

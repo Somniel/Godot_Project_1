@@ -67,9 +67,9 @@ func _on_steam_init_failed(reason: String) -> void:
 
 
 func _on_host_button_pressed() -> void:
-	_update_status("Creating lobby...")
+	_update_status("Hosting town...")
 	_set_multiplayer_buttons_enabled(false)
-	LobbyManager.create_lobby()
+	MapManager.host_town()
 
 
 func _on_browse_button_pressed() -> void:
@@ -107,17 +107,12 @@ func _on_lobby_join_failed(reason: String) -> void:
 
 func _on_host_started() -> void:
 	_update_status("Hosting! Loading world...")
-	_transition_to_world()
+	# MapManager handles scene transition
 
 
 func _on_client_started() -> void:
 	_update_status("Connected! Loading world...")
-	_transition_to_world()
-
-
-func _transition_to_world() -> void:
-	@warning_ignore("return_value_discarded")
-	get_tree().change_scene_to_file("res://scenes/world/world.tscn")
+	# MapManager handles scene transition
 
 
 func _on_connection_failed(reason: String) -> void:
@@ -159,22 +154,39 @@ func _populate_lobby_list() -> void:
 	_clear_lobby_selection()
 
 	if _available_lobbies.is_empty():
-		_lobby_info_label.text = "No servers found"
+		_lobby_info_label.text = "No towns found"
 		return
 
+	# Filter to only show town lobbies (not fields)
+	var town_lobbies: Array = []
 	for i in range(_available_lobbies.size()):
 		var lobby_id: int = _available_lobbies[i]
+		var server_type: String = LobbyManager.get_lobby_metadata(lobby_id, "server_type")
+
+		# Include lobbies that are towns or have no server_type (legacy/default)
+		if server_type.is_empty() or server_type == MapManager.MAP_TYPE_TOWN:
+			town_lobbies.append(lobby_id)
+
+	# Store filtered list for selection handling
+	_available_lobbies = town_lobbies
+
+	if town_lobbies.is_empty():
+		_lobby_info_label.text = "No towns found"
+		return
+
+	for i in range(town_lobbies.size()):
+		var lobby_id: int = town_lobbies[i]
 		var server_name: String = LobbyManager.get_lobby_metadata(lobby_id, "server_name")
 		var player_count: int = LobbyManager.get_lobby_member_count(lobby_id)
 
 		if server_name.is_empty():
-			server_name = "Unknown Server"
+			server_name = "Unknown Town"
 
 		var display_text: String = "%s (%d players)" % [server_name, player_count]
 		@warning_ignore("return_value_discarded")
 		_lobby_list.add_item(display_text)
 
-	_lobby_info_label.text = "Found %d server(s)" % _available_lobbies.size()
+	_lobby_info_label.text = "Found %d town(s)" % town_lobbies.size()
 
 
 func _clear_lobby_selection() -> void:

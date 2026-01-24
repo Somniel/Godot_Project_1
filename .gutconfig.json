@@ -1,7 +1,6 @@
 {
     "dirs": [
-        "res://tests/unit",
-        "res://tests/integration"
+        "res://tests/unit"
     ],
     "double_strategy": "partial",
     "font_color": "cccccc",

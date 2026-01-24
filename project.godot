@@ -22,6 +22,7 @@ SteamManager="*res://autoload/steam_manager.gd"
 LobbyManager="*res://autoload/lobby_manager.gd"
 NetworkManager="*res://autoload/network_manager.gd"
 InventoryManager="*res://autoload/inventory_manager.gd"
+MapManager="*res://autoload/map_manager.gd"
 
 [debug]
 

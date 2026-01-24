@@ -1,0 +1,126 @@
+[gd_scene load_steps=15 format=3 uid="uid://town_map"]
+
+[ext_resource type="Script" path="res://scenes/maps/town/town.gd" id="1_town"]
+[ext_resource type="Environment" uid="uid://defaultenv001" path="res://resources/environment/default_environment.tres" id="11_environment"]
+[ext_resource type="PackedScene" uid="uid://player" path="res://scenes/player/player.tscn" id="2_player"]
+[ext_resource type="PackedScene" uid="uid://invui001" path="res://scenes/ui/inventory/inventory_ui.tscn" id="3_inv_ui"]
+[ext_resource type="PackedScene" uid="uid://toast001" path="res://scenes/ui/toast/toast_ui.tscn" id="4_toast"]
+[ext_resource type="PackedScene" uid="uid://gatewayui01" path="res://scenes/ui/gateway/gateway_config_dialog.tscn" id="5_gateway_ui"]
+[ext_resource type="PackedScene" uid="uid://townname01" path="res://scenes/ui/town/town_name_dialog.tscn" id="6_name_dialog"]
+[ext_resource type="PackedScene" uid="uid://totemui01" path="res://scenes/ui/town/totem_ui.tscn" id="7_totem_ui"]
+[ext_resource type="PackedScene" uid="uid://hosttravelwarn" path="res://scenes/ui/town/host_travel_warning.tscn" id="8_travel_warning"]
+[ext_resource type="Script" path="res://scripts/interactable.gd" id="9_interactable"]
+[ext_resource type="PackedScene" uid="uid://travelconfirm1" path="res://scenes/ui/travel_confirm_dialog.tscn" id="10_travel_confirm"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_ground"]
+size = Vector3(40, 1, 40)
+
+[sub_resource type="BoxMesh" id="BoxMesh_ground"]
+size = Vector3(40, 1, 40)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_ground"]
+albedo_color = Color(0.25, 0.45, 0.25, 1.0)
+
+[sub_resource type="BoxMesh" id="BoxMesh_totem"]
+size = Vector3(0.8, 3.6, 0.8)
+
+[node name="Town" type="Node3D"]
+script = ExtResource("1_town")
+
+[node name="Environment" type="Node3D" parent="."]
+
+[node name="Ground" type="StaticBody3D" parent="Environment"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.5, 0)
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Environment/Ground"]
+shape = SubResource("BoxShape3D_ground")
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="Environment/Ground"]
+mesh = SubResource("BoxMesh_ground")
+surface_material_override/0 = SubResource("StandardMaterial3D_ground")
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="Environment"]
+transform = Transform3D(0.866, -0.354, 0.354, 0, 0.707, 0.707, -0.5, -0.612, 0.612, 5, 10, 5)
+shadow_enabled = true
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="Environment"]
+environment = ExtResource("11_environment")
+
+[node name="Totem" type="StaticBody3D" parent="Environment"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.8, 0)
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="Environment/Totem"]
+mesh = SubResource("BoxMesh_totem")
+
+[node name="Interactable" type="Area3D" parent="Environment/Totem"]
+collision_layer = 4
+collision_mask = 0
+script = ExtResource("9_interactable")
+interaction_type = "Touch"
+object_name = "Town Totem"
+interaction_radius = 2.5
+prompt_height_offset = 2.0
+
+[node name="SpawnPoints" type="Node3D" parent="."]
+
+[node name="Spawn1" type="Marker3D" parent="SpawnPoints"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -3, 1, 0)
+
+[node name="Spawn2" type="Marker3D" parent="SpawnPoints"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 3, 1, 0)
+
+[node name="Spawn3" type="Marker3D" parent="SpawnPoints"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, -3)
+
+[node name="Spawn4" type="Marker3D" parent="SpawnPoints"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 3)
+
+[node name="Players" type="Node3D" parent="."]
+
+[node name="MultiplayerSpawner" type="MultiplayerSpawner" parent="."]
+spawn_path = NodePath("../Players")
+
+[node name="WorldItems" type="Node3D" parent="."]
+
+[node name="ItemSpawner" type="MultiplayerSpawner" parent="."]
+spawn_path = NodePath("../WorldItems")
+
+[node name="Gateways" type="Node3D" parent="."]
+
+[node name="UI" type="CanvasLayer" parent="."]
+
+[node name="StatusLabel" type="Label" parent="UI"]
+offset_left = 10.0
+offset_top = 10.0
+offset_right = 300.0
+offset_bottom = 40.0
+text = "Town - Connecting..."
+
+[node name="LeaveButton" type="Button" parent="UI"]
+offset_left = 10.0
+offset_top = 50.0
+offset_right = 110.0
+offset_bottom = 80.0
+text = "Leave"
+
+[node name="InventoryUI" parent="UI" instance=ExtResource("3_inv_ui")]
+visible = false
+
+[node name="ToastUI" parent="UI" instance=ExtResource("4_toast")]
+
+[node name="GatewayConfigDialog" parent="UI" instance=ExtResource("5_gateway_ui")]
+visible = false
+
+[node name="TownNameDialog" parent="UI" instance=ExtResource("6_name_dialog")]
+visible = false
+
+[node name="TotemUI" parent="UI" instance=ExtResource("7_totem_ui")]
+visible = false
+
+[node name="HostTravelWarning" parent="UI" instance=ExtResource("8_travel_warning")]
+visible = false
+
+[node name="TravelConfirmDialog" parent="UI" instance=ExtResource("10_travel_confirm")]
+visible = false
+
+[connection signal="pressed" from="UI/LeaveButton" to="." method="_on_leave_button_pressed"]

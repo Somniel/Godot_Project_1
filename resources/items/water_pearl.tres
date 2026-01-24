@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="ItemData" load_steps=3 format=3 uid="uid://waterpearl002"]
+
+[ext_resource type="Script" path="res://resources/item_data.gd" id="1_item"]
+[ext_resource type="PackedScene" uid="uid://waterpearl001" path="res://scenes/items/pearl/water_pearl.tscn" id="2_scene"]
+
+[resource]
+script = ExtResource("1_item")
+id = &"water_pearl"
+display_name = "Water Pearl"
+description = "A small, glowing sphere shimmering with aquatic light. Cool and serene."
+icon = null
+max_stack = 99
+world_scene = ExtResource("2_scene")
+interaction_type = "Grab"
+is_glowing = true
+glow_color = Color(0.3, 0.6, 1.0, 1.0)
+glow_energy = 0.8
+glow_range = 2.5

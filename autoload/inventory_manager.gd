@@ -43,7 +43,7 @@ var _storage: InventoryStorage = null
 # Dictionary Helper Functions
 # =============================================================================
 
-static func _get_slot_item_id(slot: Dictionary) -> StringName:
+static func get_slot_item_id(slot: Dictionary) -> StringName:
 	## Safely extract item_id from slot dictionary.
 	var value: Variant = slot.get("item_id", "")
 	if value is StringName:
@@ -122,6 +122,20 @@ func _register_builtin_items() -> void:
 		var flame_pearl: ItemData = load(flame_pearl_path)
 		if flame_pearl != null:
 			register_item(flame_pearl)
+
+	# Register life pearl item
+	var life_pearl_path: String = "res://resources/items/life_pearl.tres"
+	if ResourceLoader.exists(life_pearl_path):
+		var life_pearl: ItemData = load(life_pearl_path)
+		if life_pearl != null:
+			register_item(life_pearl)
+
+	# Register water pearl item
+	var water_pearl_path: String = "res://resources/items/water_pearl.tres"
+	if ResourceLoader.exists(water_pearl_path):
+		var water_pearl: ItemData = load(water_pearl_path)
+		if water_pearl != null:
+			register_item(water_pearl)
 
 
 func _on_steam_initialized() -> void:
@@ -223,7 +237,7 @@ func find_slot_with_space(item_id: StringName) -> int:
 
 	for i: int in range(INVENTORY_SIZE):
 		var slot: Dictionary = _slots[i]
-		if not slot.is_empty() and _get_slot_item_id(slot) == item_id:
+		if not slot.is_empty() and get_slot_item_id(slot) == item_id:
 			if _get_slot_quantity(slot) < item_data.max_stack:
 				return i
 	return -1
@@ -295,7 +309,7 @@ func remove_from_slot(slot_index: int, quantity: int = 1) -> bool:
 	if current_quantity < quantity:
 		return false
 
-	var item_id: StringName = _get_slot_item_id(slot)
+	var item_id: StringName = get_slot_item_id(slot)
 	var new_quantity: int = current_quantity - quantity
 
 	if new_quantity <= 0:
@@ -319,7 +333,7 @@ func has_item(item_id: StringName, quantity: int = 1) -> bool:
 func get_item_count(item_id: StringName) -> int:
 	var total: int = 0
 	for slot: Dictionary in _slots:
-		if not slot.is_empty() and _get_slot_item_id(slot) == item_id:
+		if not slot.is_empty() and get_slot_item_id(slot) == item_id:
 			total += _get_slot_quantity(slot)
 	return total
 
@@ -369,8 +383,8 @@ func merge_stacks(from_index: int, to_index: int) -> int:
 		return 0
 
 	# Can only merge same item types
-	var from_item_id: StringName = _get_slot_item_id(from_slot)
-	var to_item_id: StringName = _get_slot_item_id(to_slot)
+	var from_item_id: StringName = get_slot_item_id(from_slot)
+	var to_item_id: StringName = get_slot_item_id(to_slot)
 	if from_item_id != to_item_id:
 		return _get_slot_quantity(from_slot)
 	var item_data: ItemData = get_item_data(from_item_id)
@@ -412,7 +426,7 @@ func split_from_slot(slot_index: int, quantity: int) -> Dictionary:
 	if quantity <= 0 or quantity >= slot_quantity:
 		return {}
 
-	var item_id: StringName = _get_slot_item_id(slot)
+	var item_id: StringName = get_slot_item_id(slot)
 	_slots[slot_index].quantity -= quantity
 
 	slot_updated.emit(slot_index)

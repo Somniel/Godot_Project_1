@@ -1,0 +1,161 @@
+[gd_scene load_steps=2 format=3 uid="uid://totemui01"]
+
+[ext_resource type="Script" path="res://scenes/ui/town/totem_ui.gd" id="1_script"]
+
+[node name="TotemUI" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_script")
+
+[node name="ColorRect" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0, 0, 0, 0.4)
+
+[node name="Panel" type="Panel" parent="."]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -180.0
+offset_top = -180.0
+offset_right = 180.0
+offset_bottom = 180.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="VBoxContainer" type="VBoxContainer" parent="Panel"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 15.0
+offset_top = 15.0
+offset_right = -15.0
+offset_bottom = -15.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="TitleLabel" type="Label" parent="Panel/VBoxContainer"]
+layout_mode = 2
+text = "Town Totem"
+horizontal_alignment = 1
+
+[node name="HSeparator" type="HSeparator" parent="Panel/VBoxContainer"]
+layout_mode = 2
+
+[node name="TownNameContainer" type="HBoxContainer" parent="Panel/VBoxContainer"]
+layout_mode = 2
+
+[node name="TownNameLabel" type="Label" parent="Panel/VBoxContainer/TownNameContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Town Name"
+
+[node name="EditNameButton" type="Button" parent="Panel/VBoxContainer/TownNameContainer"]
+layout_mode = 2
+text = "Edit"
+
+[node name="PlayerCountLabel" type="Label" parent="Panel/VBoxContainer"]
+layout_mode = 2
+text = "Players: 1"
+
+[node name="HostLabel" type="Label" parent="Panel/VBoxContainer"]
+layout_mode = 2
+text = "Host: PlayerName"
+
+[node name="HSeparator2" type="HSeparator" parent="Panel/VBoxContainer"]
+layout_mode = 2
+
+[node name="ConnectionsLabel" type="Label" parent="Panel/VBoxContainer"]
+layout_mode = 2
+text = "Gateway Connections"
+horizontal_alignment = 1
+
+[node name="GatewaysContainer" type="VBoxContainer" parent="Panel/VBoxContainer"]
+layout_mode = 2
+
+[node name="NorthGateway" type="HBoxContainer" parent="Panel/VBoxContainer/GatewaysContainer"]
+layout_mode = 2
+
+[node name="DirectionLabel" type="Label" parent="Panel/VBoxContainer/GatewaysContainer/NorthGateway"]
+layout_mode = 2
+custom_minimum_size = Vector2(50, 0)
+text = "North:"
+
+[node name="DestinationLabel" type="Label" parent="Panel/VBoxContainer/GatewaysContainer/NorthGateway"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Not connected"
+
+[node name="ClearButton" type="Button" parent="Panel/VBoxContainer/GatewaysContainer/NorthGateway"]
+layout_mode = 2
+text = "Clear"
+
+[node name="EastGateway" type="HBoxContainer" parent="Panel/VBoxContainer/GatewaysContainer"]
+layout_mode = 2
+
+[node name="DirectionLabel" type="Label" parent="Panel/VBoxContainer/GatewaysContainer/EastGateway"]
+layout_mode = 2
+custom_minimum_size = Vector2(50, 0)
+text = "East:"
+
+[node name="DestinationLabel" type="Label" parent="Panel/VBoxContainer/GatewaysContainer/EastGateway"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Not connected"
+
+[node name="ClearButton" type="Button" parent="Panel/VBoxContainer/GatewaysContainer/EastGateway"]
+layout_mode = 2
+text = "Clear"
+
+[node name="SouthGateway" type="HBoxContainer" parent="Panel/VBoxContainer/GatewaysContainer"]
+layout_mode = 2
+
+[node name="DirectionLabel" type="Label" parent="Panel/VBoxContainer/GatewaysContainer/SouthGateway"]
+layout_mode = 2
+custom_minimum_size = Vector2(50, 0)
+text = "South:"
+
+[node name="DestinationLabel" type="Label" parent="Panel/VBoxContainer/GatewaysContainer/SouthGateway"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Not connected"
+
+[node name="ClearButton" type="Button" parent="Panel/VBoxContainer/GatewaysContainer/SouthGateway"]
+layout_mode = 2
+text = "Clear"
+
+[node name="WestGateway" type="HBoxContainer" parent="Panel/VBoxContainer/GatewaysContainer"]
+layout_mode = 2
+
+[node name="DirectionLabel" type="Label" parent="Panel/VBoxContainer/GatewaysContainer/WestGateway"]
+layout_mode = 2
+custom_minimum_size = Vector2(50, 0)
+text = "West:"
+
+[node name="DestinationLabel" type="Label" parent="Panel/VBoxContainer/GatewaysContainer/WestGateway"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Not connected"
+
+[node name="ClearButton" type="Button" parent="Panel/VBoxContainer/GatewaysContainer/WestGateway"]
+layout_mode = 2
+text = "Clear"
+
+[node name="HSeparator3" type="HSeparator" parent="Panel/VBoxContainer"]
+layout_mode = 2
+
+[node name="CloseButton" type="Button" parent="Panel/VBoxContainer"]
+layout_mode = 2
+text = "Close"

@@ -35,11 +35,11 @@ layout_mode = 2
 
 [node name="HostButton" type="Button" parent="VBoxContainer"]
 layout_mode = 2
-text = "Host Server"
+text = "Host Town"
 
 [node name="BrowseButton" type="Button" parent="VBoxContainer"]
 layout_mode = 2
-text = "Browse Servers"
+text = "Browse Towns"
 
 [node name="QuitButton" type="Button" parent="VBoxContainer"]
 layout_mode = 2
@@ -78,7 +78,7 @@ grow_vertical = 2
 
 [node name="BrowserTitle" type="Label" parent="LobbyBrowserPanel/VBoxContainer"]
 layout_mode = 2
-text = "Available Servers"
+text = "Available Towns"
 horizontal_alignment = 1
 
 [node name="HSeparator" type="HSeparator" parent="LobbyBrowserPanel/VBoxContainer"]
