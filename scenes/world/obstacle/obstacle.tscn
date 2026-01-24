@@ -1,0 +1,10 @@
+[gd_scene load_steps=2 format=3 uid="uid://obstacle001"]
+
+[ext_resource type="Script" path="res://scenes/world/obstacle/obstacle.gd" id="1_script"]
+
+[node name="Obstacle" type="StaticBody3D"]
+script = ExtResource("1_script")
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="."]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]

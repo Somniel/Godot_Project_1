@@ -1,33 +1,33 @@
-[gd_scene load_steps=4 format=3 uid="uid://pearl001"]
+[gd_scene load_steps=4 format=3 uid="uid://waterpearl001"]
 
 [ext_resource type="PackedScene" uid="uid://worlditem001" path="res://scenes/items/world_item.tscn" id="1_base"]
 
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_pearl"]
-albedo_color = Color(0.85, 0.9, 1.0, 1.0)
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_water"]
+albedo_color = Color(0.4, 0.7, 1.0, 1.0)
 emission_enabled = true
-emission = Color(0.7, 0.85, 1.0, 1.0)
+emission = Color(0.2, 0.5, 1.0, 1.0)
 emission_energy_multiplier = 0.5
 rim_enabled = true
 rim = 0.4
 rim_tint = 0.3
 
-[sub_resource type="SphereMesh" id="SphereMesh_pearl"]
-material = SubResource("StandardMaterial3D_pearl")
+[sub_resource type="SphereMesh" id="SphereMesh_water"]
+material = SubResource("StandardMaterial3D_water")
 radius = 0.1
 height = 0.2
 radial_segments = 32
 rings = 16
 
-[node name="AirPearl" instance=ExtResource("1_base")]
-item_id = &"air_pearl"
+[node name="WaterPearl" instance=ExtResource("1_base")]
+item_id = &"water_pearl"
 quantity = 1
 
 [node name="MeshInstance3D" parent="." index="0"]
-mesh = SubResource("SphereMesh_pearl")
+mesh = SubResource("SphereMesh_water")
 
 [node name="Interactable" parent="." index="2"]
 interaction_type = "Grab"
-object_name = "Air Pearl"
+object_name = "Water Pearl"
 interaction_radius = 2.0
 prompt_height_offset = 0.4
 

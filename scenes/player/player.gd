@@ -37,7 +37,7 @@ func _deferred_setup() -> void:
 
 
 func _input(event: InputEvent) -> void:
-	if not is_multiplayer_authority():
+	if not multiplayer.has_multiplayer_peer() or not is_multiplayer_authority():
 		return
 
 	# Toggle inventory with Tab
@@ -72,7 +72,7 @@ func _input(event: InputEvent) -> void:
 
 func _physics_process(delta: float) -> void:
 	# Only process input if we own this player
-	if not is_multiplayer_authority():
+	if not multiplayer.has_multiplayer_peer() or not is_multiplayer_authority():
 		return
 
 	# Apply gravity

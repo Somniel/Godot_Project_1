@@ -31,8 +31,3 @@ object_name = "Flame Pearl"
 interaction_radius = 2.0
 prompt_height_offset = 0.4
 
-[node name="OmniLight3D" parent="." index="3"]
-visible = true
-light_color = Color(1.0, 0.4, 0.2, 1.0)
-light_energy = 1.0
-omni_range = 3.0

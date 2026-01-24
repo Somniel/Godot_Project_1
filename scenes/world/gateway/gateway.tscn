@@ -1,0 +1,54 @@
+[gd_scene load_steps=7 format=3 uid="uid://gateway001"]
+
+[ext_resource type="Script" path="res://scenes/world/gateway/gateway.gd" id="1_gateway"]
+[ext_resource type="Script" path="res://scripts/interactable.gd" id="2_interact"]
+
+[sub_resource type="BoxMesh" id="BoxMesh_pillar_left"]
+size = Vector3(0.4, 3.0, 0.4)
+
+[sub_resource type="BoxMesh" id="BoxMesh_pillar_right"]
+size = Vector3(0.4, 3.0, 0.4)
+
+[sub_resource type="BoxMesh" id="BoxMesh_top"]
+size = Vector3(2.4, 0.4, 0.4)
+
+[sub_resource type="BoxShape3D" id="BoxShape_collision"]
+size = Vector3(2.4, 3.0, 0.4)
+
+[node name="Gateway" type="StaticBody3D"]
+collision_layer = 1
+collision_mask = 0
+script = ExtResource("1_gateway")
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1, 1.5, 0)
+mesh = SubResource("BoxMesh_pillar_left")
+
+[node name="MeshInstance3D2" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 1.5, 0)
+mesh = SubResource("BoxMesh_pillar_right")
+
+[node name="MeshInstance3D3" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3.2, 0)
+mesh = SubResource("BoxMesh_top")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.5, 0)
+shape = SubResource("BoxShape_collision")
+
+[node name="Interactable" type="Area3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.5, 0)
+collision_layer = 4
+collision_mask = 0
+script = ExtResource("2_interact")
+interaction_type = "Configure"
+object_name = "Gateway"
+interaction_radius = 3.0
+prompt_height_offset = 2.5
+
+[node name="GPUParticles3D" type="GPUParticles3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.5, 0)
+emitting = false
+amount = 16
+lifetime = 2.0
+visibility_aabb = AABB(-2, -2, -2, 4, 4, 4)

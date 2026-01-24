@@ -9,6 +9,7 @@ signal travel_requested(destination_lobby_id: int)
 signal host_started
 signal client_started
 signal connection_failed(reason: String)
+signal disconnected
 
 var _multiplayer_peer: MultiplayerPeer = null
 var _is_networking_active: bool = false
@@ -112,6 +113,7 @@ func disconnect_peer() -> void:
 	multiplayer.multiplayer_peer = null
 	_is_networking_active = false
 	_client_connected = false
+	disconnected.emit()
 
 
 func is_server() -> bool:

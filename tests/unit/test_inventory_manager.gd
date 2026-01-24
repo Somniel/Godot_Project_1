@@ -11,12 +11,39 @@ extends GutTest
 var _test_item_a: ItemData = null
 var _test_item_b: ItemData = null
 
+## Saved inventory state to restore after tests
+var _saved_slots: Array[Dictionary] = []
+
+
+func before_all() -> void:
+	# Save the original inventory state before any tests run
+	_saved_slots.clear()
+	for i: int in range(InventoryManager.INVENTORY_SIZE):
+		_saved_slots.append(InventoryManager._slots[i].duplicate())
+
+
+func after_all() -> void:
+	# Restore the original inventory state after all tests complete
+	for i: int in range(InventoryManager.INVENTORY_SIZE):
+		if i < _saved_slots.size():
+			InventoryManager._slots[i] = _saved_slots[i].duplicate()
+		else:
+			InventoryManager._slots[i] = {}
+
+	# Remove test items from registry
+	@warning_ignore("return_value_discarded")
+	InventoryManager._item_registry.erase(&"test_item_a")
+	@warning_ignore("return_value_discarded")
+	InventoryManager._item_registry.erase(&"test_item_b")
+
 
 func before_each() -> void:
-	# Clear all slots before each test
+	# Clear all slots before each test (directly, bypassing save queue)
 	for i: int in range(InventoryManager.INVENTORY_SIZE):
-		# Directly clear without triggering saves
 		InventoryManager._slots[i] = {}
+
+	# Cancel any pending save to prevent test data from being written
+	_cancel_pending_save()
 
 	# Create test items if not already created
 	if _test_item_a == null:
@@ -34,6 +61,25 @@ func before_each() -> void:
 	# Register test items
 	InventoryManager.register_item(_test_item_a)
 	InventoryManager.register_item(_test_item_b)
+
+
+func after_each() -> void:
+	# Cancel any pending save to prevent test data from being written to Steam Cloud
+	_cancel_pending_save()
+
+
+func _cancel_pending_save() -> void:
+	## Stop any pending save timer to prevent test data from persisting.
+	if InventoryManager._storage == null:
+		return
+
+	var storage: Variant = InventoryManager._storage
+	if storage is SteamCloudStorage:
+		@warning_ignore("unsafe_cast")
+		var cloud_storage: SteamCloudStorage = storage as SteamCloudStorage
+		if cloud_storage._save_timer != null:
+			cloud_storage._save_timer.stop()
+		cloud_storage._save_pending = false
 
 
 # =============================================================================

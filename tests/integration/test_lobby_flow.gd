@@ -1,15 +1,23 @@
 extends GutTest
 ## Integration tests for the lobby creation and joining flow.
 ## These tests require Steam to be running and connected.
+## IMPORTANT: These tests only run in headless mode (CI) to avoid creating lobbies in editor.
 
 
-func before_all() -> void:
-	# Check if Steam is available for integration tests
+func _should_skip_integration_test() -> bool:
+	## Returns true if integration tests should be skipped.
+	## Integration tests create real Steam lobbies, so they only run in CI (headless).
+	if DisplayServer.get_name() != "headless":
+		return true
 	if not SteamManager.is_steam_initialized:
-		pending("Steam not initialized - skipping integration tests")
+		return true
+	return false
 
 
 func after_each() -> void:
+	# Clean up any lobby we might have created
+	if LobbyManager.current_lobby_id != 0:
+		LobbyManager.leave_lobby()
 	# Mark Steam Cloud warnings as handled - these are from InventoryManager autoload
 	# and are unrelated to lobby tests
 	_handle_steam_cloud_errors()
@@ -27,8 +35,8 @@ func _handle_steam_cloud_errors() -> void:
 
 
 func test_create_and_leave_lobby() -> void:
-	if not SteamManager.is_steam_initialized:
-		pending("Steam not initialized")
+	if _should_skip_integration_test():
+		pending("Integration tests only run in headless mode (CI)")
 		return
 
 	watch_signals(LobbyManager)
@@ -56,8 +64,8 @@ func test_create_and_leave_lobby() -> void:
 
 
 func test_lobby_metadata_roundtrip() -> void:
-	if not SteamManager.is_steam_initialized:
-		pending("Steam not initialized")
+	if _should_skip_integration_test():
+		pending("Integration tests only run in headless mode (CI)")
 		return
 
 	watch_signals(LobbyManager)
@@ -85,8 +93,8 @@ func test_lobby_metadata_roundtrip() -> void:
 
 
 func test_lobby_list_request() -> void:
-	if not SteamManager.is_steam_initialized:
-		pending("Steam not initialized")
+	if _should_skip_integration_test():
+		pending("Integration tests only run in headless mode (CI)")
 		return
 
 	watch_signals(LobbyManager)
