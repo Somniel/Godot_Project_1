@@ -38,17 +38,36 @@ var _is_town_host: bool = false
 ## The lobby ID of our own town (if we have one hosted or are away from it)
 var _own_town_lobby_id: int = 0
 
-## Previous town lobby IDs (tracks old IDs when town is re-hosted)
-var _previous_town_lobby_ids: Array[int] = []
-
 ## Steam ID of the current town's owner (for determining if we can re-host)
 var _current_town_owner_id: int = 0
 
 ## Cache for field states (allows returning to previously visited fields)
 var _field_cache: FieldStateCache = FieldStateCache.new()
 
+## Shared TownCloudStorage instance (singleton across all map scenes).
+## All code accesses town cloud state through this instance to prevent
+## stale overwrites from multiple independent readers/writers.
+var _town_storage: TownCloudStorage = null
+var _town_storage_loaded: bool = false
+
 ## The lobby ID of the field we're currently in (for caching on exit)
 var _current_field_lobby_id: int = 0
+
+## The lobby ID of the map we traveled FROM (used to determine arrival gateway)
+var _source_lobby_id: int = 0
+
+## The gateway ID used to leave the source map (-1 if not via gateway)
+var _source_gateway_id: int = -1
+
+## The specific gateway ID to arrive at in the destination (-1 = use default logic)
+## Set when traveling through a gateway with an explicit target (e.g., town link)
+var _target_gateway_id: int = -1
+
+## The link type of the gateway used for travel ("field" or "town")
+var _travel_link_type: String = ""
+
+## The owner Steam ID for town link travel (used with travel_to_player_town)
+var _travel_owner_steam_id: int = 0
 
 
 func _ready() -> void:
@@ -62,6 +81,10 @@ func _ready() -> void:
 
 
 func _exit_tree() -> void:
+	# Flush any pending town storage saves before shutdown
+	if _town_storage != null:
+		_town_storage.flush()
+
 	if NetworkManager.host_started.is_connected(_on_host_started):
 		NetworkManager.host_started.disconnect(_on_host_started)
 	if NetworkManager.client_started.is_connected(_on_client_started):
@@ -89,18 +112,18 @@ func is_own_town() -> bool:
 	return _current_town_owner_id == SteamManager.get_steam_id()
 
 
-## Check if a given lobby ID is our own town that needs re-hosting.
-## Returns true if the lobby_id matches our saved town or belongs to us.
-## Used by fields to skip lobby validation for return-to-own-town travel.
+## Get the current lobby ID of our own town.
+## Returns 0 if we don't have a town lobby.
+func get_own_town_lobby_id() -> int:
+	return _own_town_lobby_id
+
+
+## Check if a given lobby ID is our own town.
+## Returns true if the lobby_id matches our current town lobby.
 func is_own_town_lobby(lobby_id: int) -> bool:
-	# Check current town lobby ID
-	if lobby_id == _own_town_lobby_id:
-		return true
-	# Check previous town lobby IDs (from before re-hosting)
-	if lobby_id in _previous_town_lobby_ids:
-		return true
-	# Check if lobby metadata indicates ownership
-	return _should_rehost_own_town(lobby_id)
+	if lobby_id <= 0:
+		return false
+	return lobby_id == _own_town_lobby_id
 
 
 ## Check if we have cached state for a field that no longer has an active lobby.
@@ -109,11 +132,91 @@ func has_cached_field(lobby_id: int) -> bool:
 	return _field_cache.has_cached_state(lobby_id)
 
 
+## Get the field state cache for sync operations.
+func get_field_cache() -> FieldStateCache:
+	return _field_cache
+
+
+## Get the shared TownCloudStorage instance, creating it if needed.
+## The instance is lazy-initialized and lives for the duration of the session.
+func get_town_storage() -> TownCloudStorage:
+	if _town_storage == null:
+		_town_storage = TownCloudStorage.new()
+		_town_storage.setup(self)
+	return _town_storage
+
+
+## Get the shared TownCloudStorage, loading state from disk if not yet loaded.
+## Safe to call anywhere - load_state() is synchronous.
+func ensure_town_storage_loaded() -> TownCloudStorage:
+	var storage: TownCloudStorage = get_town_storage()
+	if not _town_storage_loaded:
+		storage.load_state()
+		_town_storage_loaded = true
+	return storage
+
+
+## Check if town storage has been loaded from disk.
+func is_town_storage_loaded() -> bool:
+	return _town_storage_loaded
+
+
+## Get the lobby ID of the map we traveled from (-1 if not via travel)
+func get_source_lobby_id() -> int:
+	return _source_lobby_id
+
+
+## Get the gateway ID used to leave the source map (-1 if not via gateway)
+func get_source_gateway_id() -> int:
+	return _source_gateway_id
+
+
+## Get the specific gateway ID to arrive at (-1 = use default logic)
+func get_target_gateway_id() -> int:
+	return _target_gateway_id
+
+
+## Set the source gateway before traveling (called by map scenes)
+## target_gateway_id: specific gateway to arrive at, or -1 for default logic
+## link_type: "field" or "town" - the type of link used for travel
+## owner_steam_id: Steam ID of the town owner (for town links)
+func set_travel_source(
+	lobby_id: int, gateway_id: int, target_gateway_id: int = -1,
+	link_type: String = "", owner_steam_id: int = 0
+) -> void:
+	_source_lobby_id = lobby_id
+	_source_gateway_id = gateway_id
+	_target_gateway_id = target_gateway_id
+	_travel_link_type = link_type
+	_travel_owner_steam_id = owner_steam_id
+
+
+## Clear travel source info (called after spawn is complete)
+func clear_travel_source() -> void:
+	_source_lobby_id = 0
+	_source_gateway_id = -1
+	_target_gateway_id = -1
+	_travel_link_type = ""
+	_travel_owner_steam_id = 0
+
+
+## Get the link type used for travel ("field", "town", or "")
+func get_travel_link_type() -> String:
+	return _travel_link_type
+
+
+## Get the owner Steam ID for town link travel (0 if not a town link)
+func get_travel_owner_steam_id() -> int:
+	return _travel_owner_steam_id
+
+
 ## Cache the current field's state before leaving.
 ## Called by the field scene when the player is about to travel away.
+## modifier_steam_id: Steam ID of the player who last modified the state (for versioning)
 func cache_current_field(
 	items: Array[Dictionary],
-	gateways: Array[Dictionary]
+	gateways: Array[Dictionary],
+	modifier_steam_id: int = 0
 ) -> void:
 	if _current_map_type != MAP_TYPE_FIELD:
 		return
@@ -134,7 +237,8 @@ func cache_current_field(
 	var pearl_type: StringName = StringName(pearl_str) if not pearl_str.is_empty() else &""
 
 	_field_cache.cache_field(
-		lobby_id, gen_seed, origin_lobby, origin_gateway, origin_name, pearl_type, items, gateways
+		lobby_id, gen_seed, origin_lobby, origin_gateway, origin_name, pearl_type, items, gateways,
+		modifier_steam_id
 	)
 
 
@@ -181,23 +285,11 @@ func get_pending_field_restoration() -> FieldStateCache.FieldState:
 ## Clear field restoration state after it's been applied.
 func clear_field_restoration() -> void:
 	if _restoring_field and _restoring_field_old_lobby_id > 0:
-		# Register the lobby ID remapping (old -> new)
-		_field_cache.register_lobby_remapping(
-			_restoring_field_old_lobby_id,
-			LobbyManager.current_lobby_id
-		)
 		# Remove the cached state since it's now active
 		_field_cache.remove_cached_state(_restoring_field_old_lobby_id)
 
 	_restoring_field = false
 	_restoring_field_old_lobby_id = 0
-
-
-## Get the current (possibly remapped) lobby ID for a field.
-## Use this when a gateway has a link to a field that may have been restored
-## with a new lobby ID.
-func get_current_field_lobby_id(old_lobby_id: int) -> int:
-	return _field_cache.get_current_lobby_id(old_lobby_id)
 
 
 ## Host our town from the main menu
@@ -243,10 +335,6 @@ func travel_to_town(lobby_id: int) -> void:
 	print("MapManager: Traveling to town %d..." % lobby_id)
 	travel_started.emit(lobby_id)
 
-	# Note: Don't clear field cache here - the town may have gateways linking
-	# to cached fields. The cache persists for the session and is only cleared
-	# when fields become truly orphaned (no host AND no direct links).
-
 	# Leave current field
 	NetworkManager.disconnect_peer()
 	LobbyManager.leave_lobby()
@@ -259,13 +347,38 @@ func travel_to_town(lobby_id: int) -> void:
 		LobbyManager.join_lobby(lobby_id)
 
 
+## Travel to a player's town using their Steam ID as a stable identifier.
+## If it's our own town, re-hosts it. Otherwise, attempts to find and join
+## their lobby.
+func travel_to_player_town(owner_steam_id: int) -> void:
+	if owner_steam_id <= 0:
+		push_warning("MapManager: Invalid owner Steam ID")
+		return
+
+	print("MapManager: Traveling to player %d's town..." % owner_steam_id)
+
+	# Disconnect from current map
+	NetworkManager.disconnect_peer()
+	LobbyManager.leave_lobby()
+
+	if owner_steam_id == SteamManager.get_steam_id():
+		# Our own town - re-host it
+		travel_started.emit(_own_town_lobby_id)
+		_rehost_own_town()
+	else:
+		# Other player's town - find their lobby
+		travel_started.emit(0)
+		LobbyManager.find_lobby_by_owner(owner_steam_id, _on_town_lobby_found)
+
+
 ## Create a new field and travel to it (host only)
 func create_field(
 	generation_seed: int,
 	origin_lobby_id: int,
 	origin_gateway: int,
 	origin_name: String = "",
-	pearl_type: StringName = &""
+	pearl_type: StringName = &"",
+	origin_owner_steam_id: int = 0
 ) -> void:
 	print("MapManager: Creating field with seed %d, pearl %s from gateway %d..." % [
 		generation_seed, pearl_type, origin_gateway
@@ -277,6 +390,7 @@ func create_field(
 	_pending_field_origin_gateway = origin_gateway
 	_pending_field_origin_name = origin_name
 	_pending_field_pearl_type = pearl_type
+	_pending_field_origin_owner = origin_owner_steam_id
 	_creating_field = true
 
 	# If we're the town host, save the town lobby ID so we can return
@@ -311,6 +425,7 @@ var _pending_field_origin_lobby: int = 0
 var _pending_field_origin_gateway: int = 0
 var _pending_field_origin_name: String = ""
 var _pending_field_pearl_type: StringName = &""
+var _pending_field_origin_owner: int = 0
 var _creating_field: bool = false
 var _restoring_field: bool = false
 var _restoring_field_old_lobby_id: int = 0
@@ -381,11 +496,6 @@ func _setup_town_metadata() -> void:
 	@warning_ignore("return_value_discarded")
 	LobbyManager.set_lobby_metadata("owner_steam_id", str(SteamManager.get_steam_id()))
 
-	# Track old town lobby ID for origin gateway matching
-	if _own_town_lobby_id > 0 and _own_town_lobby_id != LobbyManager.current_lobby_id:
-		if _own_town_lobby_id not in _previous_town_lobby_ids:
-			_previous_town_lobby_ids.append(_own_town_lobby_id)
-
 	_own_town_lobby_id = LobbyManager.current_lobby_id
 	_current_town_owner_id = SteamManager.get_steam_id()
 	_current_field_lobby_id = 0  # Not in a field
@@ -406,6 +516,13 @@ func _setup_field_metadata() -> void:
 	LobbyManager.set_lobby_metadata("origin_map_name", _pending_field_origin_name)
 	@warning_ignore("return_value_discarded")
 	LobbyManager.set_lobby_metadata("pearl_type", str(_pending_field_pearl_type))
+
+	# Store origin owner Steam ID so field can determine ownership without lobby lookup
+	var origin_owner: int = _pending_field_origin_owner
+	if origin_owner <= 0:
+		origin_owner = SteamManager.get_steam_id()
+	@warning_ignore("return_value_discarded")
+	LobbyManager.set_lobby_metadata("origin_owner_steam_id", str(origin_owner))
 
 	# Track current field lobby for caching on exit
 	_current_field_lobby_id = LobbyManager.current_lobby_id
@@ -456,3 +573,15 @@ func _change_to_current_scene() -> void:
 	print("MapManager: Changing to scene: %s" % scene_path)
 	@warning_ignore("return_value_discarded")
 	get_tree().change_scene_to_file(scene_path)
+
+
+func _on_town_lobby_found(lobby_id: int) -> void:
+	## Callback from find_lobby_by_owner when searching for another player's town.
+	if lobby_id > 0:
+		print("MapManager: Found town lobby %d, joining..." % lobby_id)
+		LobbyManager.join_lobby(lobby_id)
+	else:
+		print("MapManager: Town not currently hosted")
+		# Return to main menu since we already disconnected
+		@warning_ignore("return_value_discarded")
+		get_tree().change_scene_to_file(MAIN_MENU_PATH)

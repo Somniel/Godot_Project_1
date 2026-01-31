@@ -180,6 +180,9 @@ func show_inventory() -> void:
 	visible = true
 	_state = State.IDLE
 
+	# Register with UI manager to block player input
+	UIManager.register_blocking_ui()
+
 	# Show cursor
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
@@ -198,6 +201,10 @@ func hide_inventory() -> void:
 
 	visible = false
 	_state = State.CLOSED
+
+	# Unregister from UI manager to allow player input
+	UIManager.unregister_blocking_ui()
+
 	closed.emit()
 
 

@@ -40,6 +40,10 @@ func show_dialog(destination_name: String, destination_lobby_id: int) -> void:
 	_message_label.text = "Are you sure you want to travel to this location?"
 
 	visible = true
+
+	# Register with UI manager to block player input
+	UIManager.register_blocking_ui()
+
 	_cancel_button.grab_focus()
 
 
@@ -51,11 +55,19 @@ func get_destination_lobby_id() -> int:
 func _close() -> void:
 	visible = false
 	_pending_destination_lobby_id = 0
+
+	# Unregister from UI manager to allow player input
+	UIManager.unregister_blocking_ui()
+
 	cancelled.emit()
 
 
 func _on_confirm_pressed() -> void:
 	visible = false
+
+	# Unregister from UI manager to allow player input
+	UIManager.unregister_blocking_ui()
+
 	confirmed.emit()
 
 

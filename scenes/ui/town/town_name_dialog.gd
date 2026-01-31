@@ -44,6 +44,10 @@ func show_for_new_town() -> void:
 	_cancel_button.visible = false
 	_validate_input()
 	visible = true
+
+	# Register with UI manager to block player input
+	UIManager.register_blocking_ui()
+
 	_name_input.grab_focus()
 	_name_input.select_all()
 
@@ -57,6 +61,10 @@ func show_for_edit(current_name: String) -> void:
 	_cancel_button.visible = true
 	_validate_input()
 	visible = true
+
+	# Register with UI manager to block player input
+	UIManager.register_blocking_ui()
+
 	_name_input.grab_focus()
 	_name_input.select_all()
 
@@ -68,6 +76,10 @@ func _validate_input() -> void:
 
 func _close() -> void:
 	visible = false
+
+	# Unregister from UI manager to allow player input
+	UIManager.unregister_blocking_ui()
+
 	cancelled.emit()
 
 
@@ -76,6 +88,10 @@ func _on_confirm_pressed() -> void:
 	if town_name.is_empty():
 		return
 	visible = false
+
+	# Unregister from UI manager to allow player input
+	UIManager.unregister_blocking_ui()
+
 	name_confirmed.emit(town_name)
 
 

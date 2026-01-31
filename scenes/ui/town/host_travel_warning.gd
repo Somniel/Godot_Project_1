@@ -30,16 +30,28 @@ func _input(event: InputEvent) -> void:
 ## Show the warning dialog
 func show_warning() -> void:
 	visible = true
+
+	# Register with UI manager to block player input
+	UIManager.register_blocking_ui()
+
 	_cancel_button.grab_focus()
 
 
 func _close() -> void:
 	visible = false
+
+	# Unregister from UI manager to allow player input
+	UIManager.unregister_blocking_ui()
+
 	cancelled.emit()
 
 
 func _on_confirm_pressed() -> void:
 	visible = false
+
+	# Unregister from UI manager to allow player input
+	UIManager.unregister_blocking_ui()
+
 	confirmed.emit()
 
 
