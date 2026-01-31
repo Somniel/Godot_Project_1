@@ -210,11 +210,12 @@ func get_travel_owner_steam_id() -> int:
 	return _travel_owner_steam_id
 
 
-## Cache the current field's state before leaving.
+## Cache the current field's CRDT state before leaving.
 ## Called by the field scene when the player is about to travel away.
-## modifier_steam_id: Steam ID of the player who last modified the state (for versioning)
 func cache_current_field(
-	items: Array[Dictionary],
+	removed_items: Dictionary,
+	placed_items: Dictionary,
+	gateway_versions: Array[int],
 	gateways: Array[Dictionary],
 	modifier_steam_id: int = 0
 ) -> void:
@@ -225,20 +226,39 @@ func cache_current_field(
 
 	# Get field metadata from current lobby
 	var lobby_id: int = _current_field_lobby_id
-	var seed_str: String = LobbyManager.get_lobby_metadata(lobby_id, "generation_seed")
-	var origin_str: String = LobbyManager.get_lobby_metadata(lobby_id, "origin_lobby_id")
-	var gateway_str: String = LobbyManager.get_lobby_metadata(lobby_id, "origin_gateway")
-	var origin_name: String = LobbyManager.get_lobby_metadata(lobby_id, "origin_map_name")
-	var pearl_str: String = LobbyManager.get_lobby_metadata(lobby_id, "pearl_type")
+	var seed_str: String = LobbyManager.get_lobby_metadata(
+		lobby_id, "generation_seed"
+	)
+	var origin_str: String = LobbyManager.get_lobby_metadata(
+		lobby_id, "origin_lobby_id"
+	)
+	var gateway_str: String = LobbyManager.get_lobby_metadata(
+		lobby_id, "origin_gateway"
+	)
+	var origin_name: String = LobbyManager.get_lobby_metadata(
+		lobby_id, "origin_map_name"
+	)
+	var pearl_str: String = LobbyManager.get_lobby_metadata(
+		lobby_id, "pearl_type"
+	)
 
-	var gen_seed: int = seed_str.to_int() if not seed_str.is_empty() else 0
-	var origin_lobby: int = origin_str.to_int() if not origin_str.is_empty() else 0
-	var origin_gateway: int = gateway_str.to_int() if not gateway_str.is_empty() else 0
-	var pearl_type: StringName = StringName(pearl_str) if not pearl_str.is_empty() else &""
+	var gen_seed: int = (
+		seed_str.to_int() if not seed_str.is_empty() else 0
+	)
+	var origin_lobby: int = (
+		origin_str.to_int() if not origin_str.is_empty() else 0
+	)
+	var origin_gateway: int = (
+		gateway_str.to_int() if not gateway_str.is_empty() else 0
+	)
+	var pearl_type: StringName = (
+		StringName(pearl_str) if not pearl_str.is_empty() else &""
+	)
 
 	_field_cache.cache_field(
-		lobby_id, gen_seed, origin_lobby, origin_gateway, origin_name, pearl_type, items, gateways,
-		modifier_steam_id
+		lobby_id, gen_seed, origin_lobby, origin_gateway,
+		origin_name, pearl_type, removed_items, placed_items,
+		gateway_versions, gateways, modifier_steam_id
 	)
 
 
@@ -280,6 +300,19 @@ func get_pending_field_restoration() -> FieldStateCache.FieldState:
 	if not _restoring_field:
 		return null
 	return _field_cache.get_cached_state(_restoring_field_old_lobby_id)
+
+
+## Store CRDT state to be consumed by the next field creation.
+## Used when a client receives travel approval from the town host.
+func set_pending_field_crdt(state: Dictionary) -> void:
+	_pending_field_crdt = state.duplicate(true)
+
+
+## Consume the pending CRDT state. Returns empty dict if none stored.
+func consume_pending_field_crdt() -> Dictionary:
+	var state: Dictionary = _pending_field_crdt
+	_pending_field_crdt = {}
+	return state
 
 
 ## Clear field restoration state after it's been applied.
@@ -430,6 +463,10 @@ var _creating_field: bool = false
 var _restoring_field: bool = false
 var _restoring_field_old_lobby_id: int = 0
 
+## Temporary CRDT state for the next field creation (client travel approval).
+## Consumed by the field scene during initialization.
+var _pending_field_crdt: Dictionary = {}
+
 
 # =============================================================================
 # Signal Handlers
@@ -492,13 +529,38 @@ func _setup_town_metadata() -> void:
 	@warning_ignore("return_value_discarded")
 	LobbyManager.set_lobby_metadata("server_type", MAP_TYPE_TOWN)
 	@warning_ignore("return_value_discarded")
-	LobbyManager.set_lobby_metadata("server_name", "%s's Town" % SteamManager.get_steam_username())
+	LobbyManager.set_lobby_metadata(
+		"server_name",
+		"%s's Town" % SteamManager.get_steam_username()
+	)
 	@warning_ignore("return_value_discarded")
-	LobbyManager.set_lobby_metadata("owner_steam_id", str(SteamManager.get_steam_id()))
+	LobbyManager.set_lobby_metadata(
+		"owner_steam_id", str(SteamManager.get_steam_id())
+	)
 
 	_own_town_lobby_id = LobbyManager.current_lobby_id
 	_current_town_owner_id = SteamManager.get_steam_id()
 	_current_field_lobby_id = 0  # Not in a field
+
+
+## Update lobby metadata with linked field seeds for cross-town discovery.
+## Called after town storage loads and gateway links are restored.
+func update_town_linked_seeds(town_storage: TownCloudStorage) -> void:
+	if town_storage == null:
+		return
+	var seeds: PackedStringArray = PackedStringArray()
+	for i: int in range(4):
+		var gw: Dictionary = town_storage.get_gateway(i)
+		var seed_val: int = gw.get("generation_seed", 0)
+		if seed_val > 0:
+			@warning_ignore("return_value_discarded")
+			seeds.append(str(seed_val))
+	@warning_ignore("return_value_discarded")
+	LobbyManager.set_lobby_metadata("linked_seeds", ",".join(seeds))
+	if not seeds.is_empty():
+		print(
+			"MapManager: Advertised linked seeds: %s" % ",".join(seeds)
+		)
 
 
 func _setup_field_metadata() -> void:

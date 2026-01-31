@@ -9,6 +9,10 @@ signal picked_up(player: Node3D)
 ## The item type identifier
 @export var item_id: StringName = &""
 
+## Unique instance identifier for CRDT tracking.
+## Generated items: "gen_{seed}_{index}", placed items: "placed_{steam_id}_{time}_{n}"
+var instance_id: String = ""
+
 ## How many items this world item represents
 @export var quantity: int = 1
 

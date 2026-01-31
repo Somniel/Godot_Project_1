@@ -455,3 +455,122 @@ func send_field_version_to_peer(
 func send_field_state_to_peer(peer_id: int, generation_seed: int, state_json: String) -> void:
 	## Called to send full field state to a specific peer.
 	send_field_state.rpc_id(peer_id, generation_seed, state_json)
+
+
+# =============================================================================
+# Client Field Travel Approval RPCs
+# =============================================================================
+
+## Emitted on server when a client requests to travel through a gateway
+signal field_travel_requested(peer_id: int, gateway_id: int)
+
+## Emitted on client when server approves field travel with CRDT state
+signal field_travel_approved(
+	gateway_id: int, generation_seed: int, pearl_type: String,
+	map_name: String, field_state_json: String
+)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func request_field_travel(gateway_id: int) -> void:
+	## Called by client to request travel through a configured gateway.
+	## Server validates and responds with approve_field_travel.
+	if not multiplayer.is_server():
+		return
+	var sender_id: int = multiplayer.get_remote_sender_id()
+	print(
+		"NetworkManager: Field travel request from peer %d for gateway %d"
+		% [sender_id, gateway_id]
+	)
+	field_travel_requested.emit(sender_id, gateway_id)
+
+
+@rpc("authority", "call_remote", "reliable")
+func approve_field_travel(
+	gateway_id: int, generation_seed: int, pearl_type: String,
+	map_name: String, field_state_json: String
+) -> void:
+	## Called on client by server to approve field travel with CRDT state.
+	print(
+		"NetworkManager: Field travel approved for gateway %d (seed %d)"
+		% [gateway_id, generation_seed]
+	)
+	field_travel_approved.emit(
+		gateway_id, generation_seed, pearl_type, map_name, field_state_json
+	)
+
+
+# =============================================================================
+# CRDT Field State Exchange RPCs (replaces version-based exchange)
+# =============================================================================
+
+## Emitted when a peer sends their CRDT field state
+signal field_crdt_received(
+	peer_id: int, generation_seed: int, state_json: String
+)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func exchange_field_crdt(
+	generation_seed: int, state_json: String
+) -> void:
+	## Called to exchange CRDT field state between peers.
+	## Both host and clients call this — merge is commutative and idempotent.
+	var sender_id: int = multiplayer.get_remote_sender_id()
+	print(
+		"NetworkManager: Received CRDT exchange from peer %d for seed %d"
+		% [sender_id, generation_seed]
+	)
+	field_crdt_received.emit(sender_id, generation_seed, state_json)
+
+
+func send_field_crdt_to_peer(
+	peer_id: int, generation_seed: int, state_json: String
+) -> void:
+	## Called to send CRDT field state to a specific peer.
+	exchange_field_crdt.rpc_id(peer_id, generation_seed, state_json)
+
+
+# =============================================================================
+# Field State Return RPCs (player returns from field to town)
+# =============================================================================
+
+## Emitted on client when server requests field state on return
+signal field_state_return_requested(seeds_json: String)
+
+## Emitted on server when client returns field state
+signal field_state_returned(peer_id: int, entries_json: String)
+
+
+@rpc("authority", "call_remote", "reliable")
+func request_field_state_on_return(seeds_json: String) -> void:
+	## Called on client by server to request CRDT state for matching seeds.
+	print("NetworkManager: Server requested field state for seeds: %s" % seeds_json)
+	field_state_return_requested.emit(seeds_json)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func return_field_state(entries_json: String) -> void:
+	## Called by client to return CRDT state to the server.
+	if not multiplayer.is_server():
+		return
+	var sender_id: int = multiplayer.get_remote_sender_id()
+	print(
+		"NetworkManager: Received field state return from peer %d"
+		% sender_id
+	)
+	field_state_returned.emit(sender_id, entries_json)
+
+
+func send_field_travel_approval(
+	peer_id: int, gateway_id: int, generation_seed: int,
+	pearl_type: StringName, map_name: String,
+	field_state_json: String
+) -> void:
+	## Called by server to approve a client's field travel request.
+	if not multiplayer.is_server():
+		return
+	approve_field_travel.rpc_id(
+		peer_id, gateway_id, generation_seed, String(pearl_type),
+		map_name, field_state_json
+	)
