@@ -45,10 +45,10 @@ func _input(event: InputEvent) -> void:
 		_toggle_inventory()
 		return
 
-	# Right mouse button for camera rotation (only when inventory is closed)
+	# Right mouse button for camera rotation (only when no UI is blocking)
 	var mouse_button := event as InputEventMouseButton
 	if mouse_button and mouse_button.button_index == MOUSE_BUTTON_RIGHT:
-		if not _is_inventory_open():
+		if not UIManager.is_any_ui_blocking():
 			_is_rotating_camera = mouse_button.pressed
 			# Capture/release mouse
 			if _is_rotating_camera:
@@ -64,9 +64,9 @@ func _input(event: InputEvent) -> void:
 		# Clamp vertical rotation
 		_camera.rotation.x = clamp(_camera.rotation.x, deg_to_rad(-80.0), deg_to_rad(80.0))
 
-	# Handle interact input (only when inventory is closed)
+	# Handle interact input (only when no UI is blocking)
 	if event.is_action_pressed("interact") and _current_interactable and is_instance_valid(_current_interactable):
-		if not _is_inventory_open():
+		if not UIManager.is_any_ui_blocking():
 			_current_interactable.interact(self)
 
 
@@ -78,6 +78,14 @@ func _physics_process(delta: float) -> void:
 	# Apply gravity
 	if not is_on_floor():
 		velocity.y -= _gravity * delta
+
+	# Skip movement input when UI is blocking (still apply gravity and deceleration)
+	if UIManager.is_any_ui_blocking():
+		velocity.x = move_toward(velocity.x, 0, SPEED)
+		velocity.z = move_toward(velocity.z, 0, SPEED)
+		@warning_ignore("return_value_discarded")
+		move_and_slide()
+		return
 
 	# Handle jump
 	if Input.is_action_just_pressed("ui_accept") and is_on_floor():
@@ -247,15 +255,3 @@ func _toggle_inventory() -> void:
 		if inventory_ui.is_open():
 			_is_rotating_camera = false
 			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-
-
-func _is_inventory_open() -> bool:
-	## Check if inventory UI is currently open.
-	var world: Node = get_tree().current_scene
-	if world == null:
-		return false
-
-	var inventory_ui: InventoryUI = world.get_node_or_null("UI/InventoryUI")
-	if inventory_ui != null:
-		return inventory_ui.is_open()
-	return false

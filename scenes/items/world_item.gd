@@ -106,6 +106,14 @@ func set_item(new_item_id: StringName, new_quantity: int = 1) -> void:
 	_configure_from_item_data()
 
 
+## Get the ground position (before float height and bob offset are applied).
+## Use this for serialization to avoid cumulative Y drift on save/restore cycles.
+func get_ground_position() -> Vector3:
+	var pos: Vector3 = global_position
+	pos.y = _base_y - float_height
+	return pos
+
+
 ## Get the item data resource
 func get_item_data() -> ItemData:
 	return _item_data

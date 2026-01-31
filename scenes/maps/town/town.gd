@@ -1,59 +1,10 @@
-extends Node3D
+extends "res://scenes/maps/map_base.gd"
 ## Town map scene - persistent player-owned map.
 ## Saves state to Steam Cloud and has configurable gateway links.
 
-const PLAYER_SCENE: PackedScene = preload("res://scenes/player/player.tscn")
-const GATEWAY_SCENE: PackedScene = preload("res://scenes/world/gateway/gateway.tscn")
-const PICKUP_RANGE: float = 3.0
-
-## Gateway positions (N, E, S, W) - distance from center
-const GATEWAY_DISTANCE: float = 15.0
-const GATEWAY_POSITIONS: Array[Vector3] = [
-	Vector3(0, 0, -GATEWAY_DISTANCE),   # North
-	Vector3(GATEWAY_DISTANCE, 0, 0),    # East
-	Vector3(0, 0, GATEWAY_DISTANCE),    # South
-	Vector3(-GATEWAY_DISTANCE, 0, 0),   # West
-]
-const GATEWAY_ROTATIONS: Array[float] = [
-	0.0,    # North - facing south (toward center)
-	-90.0,  # East - facing west
-	180.0,  # South - facing north
-	90.0,   # West - facing east
-]
-
-
-static func _get_spawn_item_id(spawn_data: Dictionary) -> StringName:
-	## Safely extract item_id from spawn data dictionary.
-	var value: Variant = spawn_data.get("item_id", "")
-	if value is StringName:
-		@warning_ignore("unsafe_cast")
-		return value as StringName
-	if value is String:
-		@warning_ignore("unsafe_cast")
-		return StringName(value as String)
-	return &""
-
-
-@onready var _spawn_points: Node3D = $SpawnPoints
-@onready var _players_container: Node3D = $Players
-@onready var _player_spawner: MultiplayerSpawner = $MultiplayerSpawner
-@onready var _item_spawner: MultiplayerSpawner = $ItemSpawner
-@onready var _status_label: Label = $UI/StatusLabel
-@onready var _inventory_ui: InventoryUI = $UI/InventoryUI
-@onready var _toast_ui: ToastUI = $UI/ToastUI
-@onready var _gateways_container: Node3D = $Gateways
-@onready var _gateway_config_dialog: GatewayConfigDialog = $UI/GatewayConfigDialog
 @onready var _town_name_dialog: TownNameDialog = $UI/TownNameDialog
-@onready var _totem_ui: TotemUI = $UI/TotemUI
-@onready var _totem_interactable: Interactable = $Environment/Totem/Interactable
 @onready var _host_travel_warning: HostTravelWarning = $UI/HostTravelWarning
-@onready var _travel_confirm_dialog: TravelConfirmDialog = $UI/TravelConfirmDialog
 
-var _spawn_index: int = 0
-var _gateways: Array[Gateway] = []
-var _pending_gateway_config: Gateway = null
-var _pending_travel_gateway: Gateway = null
-var _pending_travel_lobby_id: int = 0
 var _pending_create_seed: int = 0
 var _pending_create_pearl_type: StringName = &""
 var _town_storage: TownCloudStorage = null
@@ -65,74 +16,11 @@ func _ready() -> void:
 	var peer_id: int = multiplayer.get_unique_id()
 	print("Town: _ready() called - Role: %s, PeerID: %d" % [role, peer_id])
 
-	# Configure the MultiplayerSpawner for players
-	_player_spawner.spawn_function = _spawn_player
+	# Connect shared signals (network, spawners, inventory, gateway dialog, etc.)
+	_connect_shared_signals()
 
-	# Configure the MultiplayerSpawner for items
-	_item_spawner.spawn_function = _spawn_world_item
-
-	# Connect network signals
-	@warning_ignore("return_value_discarded")
-	multiplayer.peer_connected.connect(_on_peer_connected)
-	@warning_ignore("return_value_discarded")
-	multiplayer.peer_disconnected.connect(_on_peer_disconnected)
-	@warning_ignore("return_value_discarded")
-	multiplayer.server_disconnected.connect(_on_server_disconnected)
-
-	# Connect spawner and container signals
-	@warning_ignore("return_value_discarded")
-	_player_spawner.spawned.connect(_on_player_spawned)
-	@warning_ignore("return_value_discarded")
-	_players_container.child_entered_tree.connect(_on_player_added)
-	@warning_ignore("return_value_discarded")
-	_players_container.child_exiting_tree.connect(_on_player_removed)
-
-	# Connect inventory signals
-	@warning_ignore("return_value_discarded")
-	InventoryManager.inventory_full.connect(_on_inventory_full)
-	if _inventory_ui != null:
-		@warning_ignore("return_value_discarded")
-		_inventory_ui.drop_requested.connect(_on_drop_requested)
-
-	# Connect gateway config dialog signals
-	if _gateway_config_dialog != null:
-		@warning_ignore("return_value_discarded")
-		_gateway_config_dialog.gateway_configured.connect(_on_gateway_configured)
-		@warning_ignore("return_value_discarded")
-		_gateway_config_dialog.cancelled.connect(_on_gateway_config_cancelled)
-
-	# Connect town name dialog signals
-	if _town_name_dialog != null:
-		@warning_ignore("return_value_discarded")
-		_town_name_dialog.name_confirmed.connect(_on_town_name_confirmed)
-
-	# Connect totem signals
-	if _totem_interactable != null:
-		@warning_ignore("return_value_discarded")
-		_totem_interactable.interacted.connect(_on_totem_interacted)
-	if _totem_ui != null:
-		@warning_ignore("return_value_discarded")
-		_totem_ui.edit_name_requested.connect(_on_totem_edit_name_requested)
-		@warning_ignore("return_value_discarded")
-		_totem_ui.gateway_clear_requested.connect(_on_gateway_clear_requested)
-
-	# Connect host travel warning signals
-	if _host_travel_warning != null:
-		@warning_ignore("return_value_discarded")
-		_host_travel_warning.confirmed.connect(_on_host_travel_confirmed)
-		@warning_ignore("return_value_discarded")
-		_host_travel_warning.cancelled.connect(_on_host_travel_cancelled)
-
-	# Connect travel confirmation dialog signals
-	if _travel_confirm_dialog != null:
-		@warning_ignore("return_value_discarded")
-		_travel_confirm_dialog.confirmed.connect(_on_travel_confirm_confirmed)
-		@warning_ignore("return_value_discarded")
-		_travel_confirm_dialog.cancelled.connect(_on_travel_confirm_cancelled)
-
-	# Connect lobby manager signals for gateway validation
-	@warning_ignore("return_value_discarded")
-	LobbyManager.lobby_data_received.connect(_on_lobby_data_received)
+	# Connect town-specific signals
+	_connect_town_signals()
 
 	# Spawn gateways (links will be restored after storage loads)
 	_spawn_gateways()
@@ -141,9 +29,10 @@ func _ready() -> void:
 	if multiplayer.has_multiplayer_peer():
 		print("Town: Has multiplayer peer, is_server: %s" % multiplayer.is_server())
 		if multiplayer.is_server():
-			_spawn_all_connected_players()
-			# Initialize and load town storage
+			# Initialize and load town storage BEFORE spawning
+			# This ensures gateway links are available for spawn position calculation
 			_init_town_storage()
+			_spawn_all_connected_players()
 		else:
 			# Clients don't load storage, just mark as ready
 			_is_loading_complete = true
@@ -152,51 +41,66 @@ func _ready() -> void:
 		print("Town: No multiplayer peer!")
 
 
-func _spawn_all_connected_players() -> void:
-	print("Town: Spawning all connected players...")
+func _connect_town_signals() -> void:
+	## Connect town-specific signals not handled by MapBase.
+	if _town_name_dialog != null:
+		@warning_ignore("return_value_discarded")
+		_town_name_dialog.name_confirmed.connect(_on_town_name_confirmed)
 
-	@warning_ignore("return_value_discarded")
-	_player_spawner.spawn(1)
+	if _totem_ui != null:
+		@warning_ignore("return_value_discarded")
+		_totem_ui.edit_name_requested.connect(_on_totem_edit_name_requested)
 
-	var peers: PackedInt32Array = multiplayer.get_peers()
-	for peer_id in peers:
-		if peer_id != 1:
-			print("Town: Spawning existing peer: %d" % peer_id)
-			@warning_ignore("return_value_discarded")
-			_player_spawner.spawn(peer_id)
+	if _host_travel_warning != null:
+		@warning_ignore("return_value_discarded")
+		_host_travel_warning.confirmed.connect(_on_host_travel_confirmed)
+		@warning_ignore("return_value_discarded")
+		_host_travel_warning.cancelled.connect(_on_host_travel_cancelled)
 
-
-func _is_player_spawned(peer_id: int) -> bool:
-	return _players_container.has_node(str(peer_id))
-
-
-func _spawn_player(peer_id: int) -> Node:
-	var role: String = "Server" if multiplayer.is_server() else "Client"
-	print("Town: _spawn_player() called for peer %d (I am %s)" % [peer_id, role])
-
-	var player: CharacterBody3D = PLAYER_SCENE.instantiate()
-	if player == null:
-		push_error("Town: Failed to instantiate player scene for peer %d" % peer_id)
-		return null
-
-	player.name = str(peer_id)
-	player.set_multiplayer_authority(peer_id)
-
-	var spawn_point := _get_next_spawn_point()
-	player.position = spawn_point
-
-	print("Town: Created player node '%s' at position %s" % [player.name, spawn_point])
-	return player
+	# Field cache data (clients only)
+	if not multiplayer.is_server():
+		@warning_ignore("return_value_discarded")
+		NetworkManager.field_cache_received.connect(_on_field_cache_received)
 
 
-func _get_next_spawn_point() -> Vector3:
-	var spawn_children := _spawn_points.get_children()
-	if spawn_children.is_empty():
-		return Vector3(0, 1, 0)
+# =============================================================================
+# MapBase Virtual Overrides
+# =============================================================================
 
-	var point: Marker3D = spawn_children[_spawn_index % spawn_children.size()]
-	_spawn_index += 1
-	return point.global_position
+func _get_map_type_name() -> String:
+	return "Town"
+
+
+func _get_arrival_gateway_id() -> int:
+	## Town-specific: also checks storage when gateways aren't configured yet.
+	var result: int = super()
+	if result >= 0:
+		return result
+
+	# If base class didn't find it, check storage directly
+	var source_lobby: int = MapManager.get_source_lobby_id()
+	if source_lobby <= 0:
+		return -1
+
+	if _town_storage != null:
+		for i: int in range(4):
+			var gateway_data: Dictionary = _town_storage.get_gateway(i)
+			var lobby_id_value: Variant = gateway_data.get("linked_lobby_id", "0")
+			var lobby_id: int = 0
+			if lobby_id_value is String:
+				@warning_ignore("unsafe_cast")
+				lobby_id = (lobby_id_value as String).to_int()
+			elif lobby_id_value is int or lobby_id_value is float:
+				# Type-narrowed Variant; int() cast is safe after is-check
+				@warning_ignore("unsafe_call_argument")
+				lobby_id = int(lobby_id_value)
+			if lobby_id == source_lobby:
+				print("Town: Found gateway %d in storage linking to source lobby %d" % [
+					i, source_lobby
+				])
+				return i
+
+	return -1
 
 
 func _update_status() -> void:
@@ -210,77 +114,42 @@ func _update_status() -> void:
 	_status_label.text = "%s - %s - %d player(s)" % [town_name, role, player_count]
 
 
-func _on_player_spawned(node: Node) -> void:
-	print("Town: Player spawned: %s" % node.name)
-	_update_status()
-
-
-func _on_player_added(_node: Node) -> void:
-	_update_status()
-
-
-func _on_player_removed(_node: Node) -> void:
-	call_deferred("_update_status")
-
-
 func _on_peer_connected(peer_id: int) -> void:
-	print("Town: Peer connected: %d" % peer_id)
-	if multiplayer.is_server() and not _is_player_spawned(peer_id):
-		@warning_ignore("return_value_discarded")
-		_player_spawner.spawn(peer_id)
-	_update_status()
-
-
-func _on_peer_disconnected(peer_id: int) -> void:
-	print("Town: Peer disconnected: %d" % peer_id)
-	var player_node := _players_container.get_node_or_null(str(peer_id))
-	if player_node:
-		player_node.queue_free()
-	_update_status()
-
-
-func _on_server_disconnected() -> void:
-	print("Town: Server disconnected")
-	_return_to_menu()
-
-
-func _on_leave_button_pressed() -> void:
-	_return_to_menu()
-
-
-func _return_to_menu() -> void:
-	NetworkManager.disconnect_peer()
-	LobbyManager.leave_lobby()
-	@warning_ignore("return_value_discarded")
-	get_tree().change_scene_to_file("res://scenes/main_menu/main_menu.tscn")
+	super(peer_id)
+	if multiplayer.is_server():
+		# Sync all gateway states to the new peer
+		_sync_all_gateways_to_peer(peer_id)
+		# Sync field cache to the new peer
+		_sync_field_cache_to_peer(peer_id)
 
 
 func _exit_tree() -> void:
-	# Flush pending saves before exiting
-	if _town_storage != null:
-		_town_storage.flush()
+	# Disconnect load_completed if still connected (MapManager owns the storage lifecycle)
+	if _town_storage != null and _town_storage.load_completed.is_connected(_on_town_load_completed):
+		_town_storage.load_completed.disconnect(_on_town_load_completed)
+	_town_storage = null
 
-	if multiplayer.peer_connected.is_connected(_on_peer_connected):
-		multiplayer.peer_connected.disconnect(_on_peer_connected)
-	if multiplayer.peer_disconnected.is_connected(_on_peer_disconnected):
-		multiplayer.peer_disconnected.disconnect(_on_peer_disconnected)
-	if multiplayer.server_disconnected.is_connected(_on_server_disconnected):
-		multiplayer.server_disconnected.disconnect(_on_server_disconnected)
-	if _player_spawner and _player_spawner.spawned.is_connected(_on_player_spawned):
-		_player_spawner.spawned.disconnect(_on_player_spawned)
-	if _players_container:
-		if _players_container.child_entered_tree.is_connected(_on_player_added):
-			_players_container.child_entered_tree.disconnect(_on_player_added)
-		if _players_container.child_exiting_tree.is_connected(_on_player_removed):
-			_players_container.child_exiting_tree.disconnect(_on_player_removed)
-	if InventoryManager.inventory_full.is_connected(_on_inventory_full):
-		InventoryManager.inventory_full.disconnect(_on_inventory_full)
-	if _inventory_ui and _inventory_ui.drop_requested.is_connected(_on_drop_requested):
-		_inventory_ui.drop_requested.disconnect(_on_drop_requested)
+	_disconnect_shared_signals()
+	_disconnect_town_signals()
+
+
+func _disconnect_town_signals() -> void:
+	## Disconnect town-specific signals.
+	if _town_name_dialog and _town_name_dialog.name_confirmed.is_connected(_on_town_name_confirmed):
+		_town_name_dialog.name_confirmed.disconnect(_on_town_name_confirmed)
+	if _totem_ui and _totem_ui.edit_name_requested.is_connected(_on_totem_edit_name_requested):
+		_totem_ui.edit_name_requested.disconnect(_on_totem_edit_name_requested)
+	if _host_travel_warning:
+		if _host_travel_warning.confirmed.is_connected(_on_host_travel_confirmed):
+			_host_travel_warning.confirmed.disconnect(_on_host_travel_confirmed)
+		if _host_travel_warning.cancelled.is_connected(_on_host_travel_cancelled):
+			_host_travel_warning.cancelled.disconnect(_on_host_travel_cancelled)
+	if NetworkManager.field_cache_received.is_connected(_on_field_cache_received):
+		NetworkManager.field_cache_received.disconnect(_on_field_cache_received)
 
 
 # =============================================================================
-# Item Spawning (copied from world.gd)
+# Town-Specific Items
 # =============================================================================
 
 func _spawn_initial_items() -> void:
@@ -297,160 +166,11 @@ func _spawn_initial_items() -> void:
 	]
 
 	for spawn: Dictionary in pearl_spawns:
+		# Dict values are provably StringName/Vector3 from the literal above
+		@warning_ignore("unsafe_call_argument")
 		_spawn_item_at(spawn["id"], spawn["pos"], 1)
 
 	print("Town: Spawned %d initial pearls (one of each type)" % pearl_spawns.size())
-
-
-func _spawn_item_at(item_id: StringName, pos: Vector3, quantity: int = 1) -> void:
-	if not multiplayer.is_server():
-		return
-
-	var spawn_data: Dictionary = {
-		"item_id": str(item_id),
-		"position": pos,
-		"quantity": quantity
-	}
-	@warning_ignore("return_value_discarded")
-	_item_spawner.spawn(spawn_data)
-
-
-func _spawn_world_item(data: Variant) -> Node:
-	if not data is Dictionary:
-		push_error("Town: Invalid item spawn data")
-		return null
-
-	var spawn_data: Dictionary = data
-	var item_id: StringName = _get_spawn_item_id(spawn_data)
-	var pos: Vector3 = spawn_data.get("position", Vector3.ZERO)
-	var quantity: int = spawn_data.get("quantity", 1)
-
-	var item_data: ItemData = InventoryManager.get_item_data(item_id)
-	if item_data == null or item_data.world_scene == null:
-		push_error("Town: Unknown item or no world scene: %s" % item_id)
-		return null
-
-	var world_item: WorldItem = item_data.world_scene.instantiate()
-	if world_item == null:
-		push_error("Town: Failed to instantiate world item: %s" % item_id)
-		return null
-
-	world_item.item_id = item_id
-	world_item.quantity = quantity
-	world_item.position = pos
-
-	@warning_ignore("return_value_discarded")
-	world_item.picked_up.connect(_on_world_item_picked_up.bind(world_item))
-
-	return world_item
-
-
-func _on_world_item_picked_up(player: Node3D, world_item: WorldItem) -> void:
-	if player == null or world_item == null:
-		return
-
-	if not player.is_multiplayer_authority():
-		return
-
-	var item_path: String = str(world_item.get_path())
-	if multiplayer.is_server():
-		_process_pickup(1, item_path)
-	else:
-		_request_pickup.rpc_id(1, item_path)
-
-
-@rpc("any_peer", "call_remote", "reliable")
-func _request_pickup(item_path: String) -> void:
-	if not multiplayer.is_server():
-		return
-
-	var sender_id: int = multiplayer.get_remote_sender_id()
-	_process_pickup(sender_id, item_path)
-
-
-func _process_pickup(peer_id: int, item_path: String) -> void:
-	var world_item: WorldItem = get_node_or_null(item_path)
-
-	if world_item == null:
-		print("Town: Pickup request failed - item not found: %s" % item_path)
-		return
-
-	var player_node: Node3D = _players_container.get_node_or_null(str(peer_id))
-	if player_node == null:
-		print("Town: Pickup request failed - player not found: %d" % peer_id)
-		return
-
-	var distance: float = player_node.global_position.distance_to(world_item.global_position)
-	if distance > PICKUP_RANGE:
-		print("Town: Pickup request failed - player too far: %.1f > %.1f" % [distance, PICKUP_RANGE])
-		return
-
-	var item_id: StringName = world_item.item_id
-	var quantity: int = world_item.quantity
-
-	world_item.queue_free()
-
-	if peer_id == 1:
-		_add_pickup_to_inventory(item_id, quantity)
-	else:
-		_confirm_pickup.rpc_id(peer_id, str(item_id), quantity)
-
-
-@rpc("authority", "call_remote", "reliable")
-func _confirm_pickup(item_id_str: String, quantity: int) -> void:
-	var item_id: StringName = StringName(item_id_str)
-	_add_pickup_to_inventory(item_id, quantity)
-
-
-func _add_pickup_to_inventory(item_id: StringName, quantity: int) -> void:
-	var overflow: int = InventoryManager.add_item(item_id, quantity)
-
-	if overflow > 0:
-		print("Town: Picked up %d %s, %d overflow" % [quantity - overflow, item_id, overflow])
-		if multiplayer.is_server():
-			_process_drop(1, str(item_id), overflow)
-		else:
-			_request_drop.rpc_id(1, str(item_id), overflow)
-	else:
-		print("Town: Picked up %d %s" % [quantity, item_id])
-
-
-@rpc("any_peer", "call_remote", "reliable")
-func _request_drop(item_id_str: String, quantity: int) -> void:
-	if not multiplayer.is_server():
-		return
-
-	var sender_id: int = multiplayer.get_remote_sender_id()
-	_process_drop(sender_id, item_id_str, quantity)
-
-
-func _process_drop(peer_id: int, item_id_str: String, quantity: int) -> void:
-	var player_node: Node3D = _players_container.get_node_or_null(str(peer_id))
-
-	if player_node == null:
-		print("Town: Drop request failed - player not found: %d" % peer_id)
-		return
-
-	var drop_pos: Vector3 = player_node.global_position
-	var forward: Vector3 = -player_node.global_transform.basis.z
-	drop_pos += forward * 1.0
-	drop_pos.y = 0.0
-
-	var item_id: StringName = StringName(item_id_str)
-	_spawn_item_at(item_id, drop_pos, quantity)
-	print("Town: Dropped %d %s at %s" % [quantity, item_id, drop_pos])
-
-
-func _on_drop_requested(item_id: StringName, quantity: int) -> void:
-	if multiplayer.is_server():
-		_process_drop(1, str(item_id), quantity)
-	else:
-		_request_drop.rpc_id(1, str(item_id), quantity)
-
-
-func _on_inventory_full() -> void:
-	if _toast_ui != null:
-		_toast_ui.show_toast("Inventory Full")
 
 
 # =============================================================================
@@ -513,11 +233,17 @@ func _on_gateway_configure_requested(player: Node3D, gateway: Gateway) -> void:
 
 func _on_gateway_configured(generation_seed: int, field_name: String, pearl_type: StringName) -> void:
 	## Handle gateway configuration from dialog. Just stores config, no travel.
+	## Town gateway config is host-only, so pearl is consumed immediately.
 	if _pending_gateway_config == null:
 		return
 
 	var gateway: Gateway = _pending_gateway_config
 	_pending_gateway_config = null
+
+	# Consume pearl (dialog no longer does this - we consume after validation)
+	if not GatewayConfigDialog.consume_pearl_from_inventory(pearl_type):
+		push_warning("Town: Failed to consume pearl")
+		return
 
 	print("Town: Configured %s gateway for field '%s' (seed %d, pearl %s)" % [
 		gateway.get_direction_name(), field_name, generation_seed, pearl_type
@@ -530,6 +256,12 @@ func _on_gateway_configured(generation_seed: int, field_name: String, pearl_type
 	if multiplayer.is_server() and _town_storage != null:
 		_town_storage.set_gateway_config(
 			gateway.gateway_id, generation_seed, field_name, pearl_type
+		)
+
+	# Broadcast gateway state to all clients
+	if multiplayer.is_server():
+		NetworkManager.broadcast_gateway_state(
+			gateway.gateway_id, 0, field_name, generation_seed, pearl_type, -1
 		)
 
 
@@ -563,6 +295,88 @@ func _on_gateway_config_cancelled() -> void:
 	_pending_gateway_config = null
 
 
+func _sync_all_gateways_to_peer(peer_id: int) -> void:
+	## Send all gateway states to a specific peer (called when they connect).
+	if not multiplayer.is_server():
+		return
+
+	for gateway: Gateway in _gateways:
+		# Town gateways only link to fields
+		var link_type_str: String = "field" if gateway.has_link() else "none"
+		NetworkManager.sync_gateway_state_to_peer(
+			peer_id,
+			gateway.gateway_id,
+			gateway.linked_lobby_id,
+			gateway.linked_map_name,
+			gateway.generation_seed,
+			gateway.pearl_type,
+			gateway.linked_gateway_id,
+			link_type_str
+		)
+
+
+func _on_gateway_state_received(gateway_id: int, data: Dictionary) -> void:
+	## Handle gateway state update from server (clients only).
+	if multiplayer.is_server():
+		return  # Server doesn't need to process its own broadcasts
+
+	if gateway_id < 0 or gateway_id >= _gateways.size():
+		return
+
+	var gateway: Gateway = _gateways[gateway_id]
+	var lobby_id: int = data.get("linked_lobby_id", 0)
+	var map_name: String = data.get("linked_map_name", "")
+	var seed_val: int = data.get("generation_seed", 0)
+	var pearl_str: String = data.get("pearl_type", "")
+	var pearl_type: StringName = StringName(pearl_str) if not pearl_str.is_empty() else &""
+	var linked_gw_id: int = data.get("linked_gateway_id", -1)
+
+	if lobby_id > 0:
+		# Full link exists
+		gateway.set_link(lobby_id, map_name, linked_gw_id)
+		gateway.generation_seed = seed_val
+		gateway.pearl_type = pearl_type
+	elif seed_val > 0:
+		# Configured but not yet created
+		gateway.set_config(seed_val, map_name, pearl_type)
+	else:
+		# Cleared
+		gateway.clear_link()
+
+	print("Town: Received gateway %d sync from server (lobby=%d, name=%s, target_gw=%d)" % [
+		gateway_id, lobby_id, map_name, linked_gw_id
+	])
+
+
+func _sync_field_cache_to_peer(peer_id: int) -> void:
+	## Send field cache to a specific peer (called when they connect).
+	if not multiplayer.is_server():
+		return
+
+	var cache: FieldStateCache = MapManager.get_field_cache()
+	if cache == null:
+		return
+
+	var entries: Array[Dictionary] = cache.serialize_all()
+	if entries.is_empty():
+		return
+
+	NetworkManager.sync_field_cache_to_peer(peer_id, entries, {})
+
+
+func _on_field_cache_received(entries: Array, _remappings: Dictionary) -> void:
+	## Handle field cache data received from server.
+	if multiplayer.is_server():
+		return  # Server doesn't need to receive its own broadcasts
+
+	var cache: FieldStateCache = MapManager.get_field_cache()
+	if cache == null:
+		return
+
+	cache.merge_entries(entries)
+	print("Town: Merged field cache from server")
+
+
 func _on_lobby_data_received(lobby_id: int, exists: bool) -> void:
 	## Handle response from gateway destination validation.
 	if _pending_travel_gateway == null:
@@ -573,7 +387,8 @@ func _on_lobby_data_received(lobby_id: int, exists: bool) -> void:
 		return
 
 	var gateway: Gateway = _pending_travel_gateway
-	_pending_travel_gateway = null
+	# Note: Don't clear _pending_travel_gateway here - it's needed by _on_host_travel_confirmed
+	# It will be cleared when travel is confirmed or cancelled
 
 	if exists:
 		# Lobby exists - check if we're the host and need to show a warning
@@ -596,17 +411,36 @@ func _on_lobby_data_received(lobby_id: int, exists: bool) -> void:
 				_pending_travel_lobby_id = lobby_id
 				_host_travel_warning.show_warning()
 			else:
+				_pending_travel_gateway = null  # Clear since we're not traveling
+				if _toast_ui != null:
+					_toast_ui.show_toast("Field is not currently hosted")
+		elif gateway.generation_seed > 0:
+			# No cache but we have the seed - can recreate the field
+			print("Town: Recreating field from seed %d (old lobby %d no longer exists)" % [
+				gateway.generation_seed, lobby_id
+			])
+			if multiplayer.is_server():
+				# Host can recreate the field
+				_pending_travel_lobby_id = -1  # Special value for "create new"
+				_pending_create_seed = gateway.generation_seed
+				_pending_create_pearl_type = gateway.pearl_type
+				_host_travel_warning.show_warning()
+			else:
+				_pending_travel_gateway = null  # Clear since we're not traveling
 				if _toast_ui != null:
 					_toast_ui.show_toast("Field is not currently hosted")
 		else:
-			# No cached state - clear the stale link
+			# No cached state and no seed - clear the stale link
 			print("Town: Destination lobby %d no longer exists, clearing stale link" % lobby_id)
+			_pending_travel_gateway = null  # Clear since we're not traveling
 			_clear_stale_gateway_link(gateway)
 
 
 func _on_host_travel_confirmed() -> void:
 	## Handle host confirming they want to leave the town.
 	var gateway: Gateway = _pending_travel_gateway
+	var gateway_id: int = gateway.gateway_id if gateway != null else -1
+	var target_gateway_id: int = gateway.linked_gateway_id if gateway != null else -1
 	_pending_travel_gateway = null
 
 	if _pending_travel_lobby_id == -1 and _pending_create_seed > 0:
@@ -617,13 +451,22 @@ func _on_host_travel_confirmed() -> void:
 		_pending_create_pearl_type = &""
 		_pending_travel_lobby_id = 0
 
-		print("Town: Host confirmed field creation with seed %d, pearl %s" % [field_seed, pearl_type])
+		# Set travel source so destination knows where we came from
+		# For new field creation, target_gateway_id is not yet known (field will set it up)
+		MapManager.set_travel_source(
+			LobbyManager.current_lobby_id, gateway_id, -1, "field"
+		)
+
+		print("Town: Host confirmed field creation with seed %d, pearl %s via gateway %d" % [
+			field_seed, pearl_type, gateway_id
+		])
 		MapManager.create_field(
 			field_seed,
 			LobbyManager.current_lobby_id,
-			gateway.gateway_id if gateway != null else 0,
+			gateway_id if gateway_id >= 0 else 0,
 			get_town_name(),
-			pearl_type
+			pearl_type,
+			SteamManager.get_steam_id()
 		)
 	elif _pending_travel_lobby_id > 0:
 		var lobby_id: int = _pending_travel_lobby_id
@@ -631,14 +474,23 @@ func _on_host_travel_confirmed() -> void:
 		_pending_create_seed = 0
 		_pending_create_pearl_type = &""
 
+		# Set travel source with target gateway so we spawn at the correct field gateway
+		MapManager.set_travel_source(
+			LobbyManager.current_lobby_id, gateway_id, target_gateway_id, "field"
+		)
+
 		# Check if this is a cached field that needs restoration
 		if MapManager.has_cached_field(lobby_id):
-			print("Town: Host confirmed restoration of cached field %d" % lobby_id)
+			print("Town: Host confirmed restoration via gateway %d -> field gateway %d" % [
+				gateway_id, target_gateway_id
+			])
 			@warning_ignore("return_value_discarded")
 			MapManager.restore_cached_field(lobby_id)
 		else:
 			# Travel to existing field
-			print("Town: Host confirmed travel to lobby %d" % lobby_id)
+			print("Town: Host confirmed travel to lobby %d via gateway %d -> field gateway %d" % [
+				lobby_id, gateway_id, target_gateway_id
+			])
 			MapManager.travel_to_field(lobby_id)
 	else:
 		_pending_travel_lobby_id = 0
@@ -658,19 +510,27 @@ func _on_host_travel_cancelled() -> void:
 func _on_travel_confirm_confirmed() -> void:
 	## Handle player confirming travel via confirmation dialog.
 	var lobby_id: int = _travel_confirm_dialog.get_destination_lobby_id()
+
+	# Capture gateway info before clearing pending state
+	var gateway_id: int = -1
+	var target_gateway_id: int = -1
+	if _pending_travel_gateway != null:
+		gateway_id = _pending_travel_gateway.gateway_id
+		target_gateway_id = _pending_travel_gateway.linked_gateway_id
+
 	_pending_travel_lobby_id = 0
 	_pending_travel_gateway = null
 
 	if lobby_id > 0:
-		print("Town: Travel confirmed to lobby %d" % lobby_id)
+		# Set travel source with target gateway so we spawn at the correct field gateway
+		MapManager.set_travel_source(
+			LobbyManager.current_lobby_id, gateway_id, target_gateway_id, "field"
+		)
+
+		print("Town: Travel confirmed to lobby %d via gateway %d -> field gateway %d" % [
+			lobby_id, gateway_id, target_gateway_id
+		])
 		MapManager.travel_to_field(lobby_id)
-
-
-func _on_travel_confirm_cancelled() -> void:
-	## Handle player cancelling travel via confirmation dialog.
-	_pending_travel_lobby_id = 0
-	_pending_travel_gateway = null
-	print("Town: Travel cancelled")
 
 
 func _clear_stale_gateway_link(gateway: Gateway) -> void:
@@ -679,7 +539,9 @@ func _clear_stale_gateway_link(gateway: Gateway) -> void:
 
 	# Update persistent storage if host
 	if multiplayer.is_server() and _town_storage != null:
-		_town_storage.set_gateway_link(gateway.gateway_id, 0, "")
+		_town_storage.clear_gateway_link(gateway.gateway_id)
+		# Clean up any orphaned linked field states
+		_town_storage.cleanup_orphaned_linked_fields()
 
 	# Show feedback to player
 	if _toast_ui != null:
@@ -691,12 +553,20 @@ func _clear_stale_gateway_link(gateway: Gateway) -> void:
 # =============================================================================
 
 func _init_town_storage() -> void:
-	## Initialize town storage and begin loading (host only).
-	_town_storage = TownCloudStorage.new()
-	_town_storage.setup(self)
-	@warning_ignore("return_value_discarded")
-	_town_storage.load_completed.connect(_on_town_load_completed)
-	_town_storage.load_state()
+	## Initialize town storage reference (host only).
+	## Uses the shared instance owned by MapManager. If already loaded
+	## (e.g., returning from a field), skips disk I/O.
+	_town_storage = MapManager.get_town_storage()
+
+	if MapManager.is_town_storage_loaded():
+		# Already loaded (returning from field) - proceed directly
+		_on_town_load_completed(true)
+	else:
+		# First load - connect signal and read from disk
+		@warning_ignore("return_value_discarded")
+		_town_storage.load_completed.connect(_on_town_load_completed)
+		_town_storage.load_state()
+		MapManager._town_storage_loaded = true
 
 
 func _on_town_load_completed(success: bool) -> void:
@@ -754,22 +624,37 @@ func _restore_gateway_links() -> void:
 
 	for i: int in range(_gateways.size()):
 		var gateway_data: Dictionary = _town_storage.get_gateway(i)
-		var lobby_id: int = gateway_data.get("linked_lobby_id", 0)
+		# linked_lobby_id is stored as string to preserve precision for large Steam lobby IDs
+		var lobby_id_value: Variant = gateway_data.get("linked_lobby_id", "0")
+		var lobby_id: int = 0
+		if lobby_id_value is String:
+			@warning_ignore("unsafe_cast")
+			lobby_id = (lobby_id_value as String).to_int()
+		elif lobby_id_value is int or lobby_id_value is float:
+			# Type-narrowed Variant; int() cast is safe after is-check
+			@warning_ignore("unsafe_call_argument")
+			lobby_id = int(lobby_id_value)
 		var map_name: String = gateway_data.get("linked_map_name", "")
 		var field_seed: int = gateway_data.get("generation_seed", 0)
 		var pearl_type_str: String = gateway_data.get("pearl_type", "")
 		var pearl_type: StringName = StringName(pearl_type_str) if not pearl_type_str.is_empty() else &""
+		var linked_gateway_id: int = gateway_data.get("linked_gateway_id", -1)
 
 		if lobby_id > 0:
-			# Has a created field
-			_gateways[i].set_link(lobby_id, map_name)
+			# Has a created field - pass linked_gateway_id to track which field gateway to arrive at
+			_gateways[i].set_link(lobby_id, map_name, linked_gateway_id)
 			_gateways[i].generation_seed = field_seed
 			_gateways[i].pearl_type = pearl_type
-			print("Town: Restored gateway %d link to %s (lobby %d, pearl %s)" % [i, map_name, lobby_id, pearl_type])
+			print("Town: Restored gateway %d link to %s (lobby %d, field_gw %d, pearl %s)" % [
+				i, map_name, lobby_id, linked_gateway_id, pearl_type
+			])
 		elif field_seed > 0 and not map_name.is_empty():
 			# Configured but field not created yet
 			_gateways[i].set_config(field_seed, map_name, pearl_type)
-			print("Town: Restored gateway %d config for %s (seed %d, pearl %s)" % [i, map_name, field_seed, pearl_type])
+			_gateways[i].linked_gateway_id = linked_gateway_id
+			print("Town: Restored gateway %d config for %s (seed %d, field_gw %d, pearl %s)" % [
+				i, map_name, field_seed, linked_gateway_id, pearl_type
+			])
 
 
 func _save_gateway_link(gateway_id: int, lobby_id: int, map_name: String) -> void:
@@ -838,6 +723,11 @@ func _on_gateway_clear_requested(gateway_id: int) -> void:
 	# Update storage
 	if _town_storage != null:
 		_town_storage.clear_gateway_link(gateway_id)
+		# Clean up any orphaned linked field states
+		_town_storage.cleanup_orphaned_linked_fields()
+
+	# Broadcast cleared gateway state to all clients
+	NetworkManager.broadcast_gateway_state(gateway_id, 0, "", 0, &"", -1)
 
 	# Refresh the totem UI
 	var gateway_data: Array[Dictionary] = _get_gateway_data_for_ui()

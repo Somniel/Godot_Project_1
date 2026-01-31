@@ -1,10 +1,13 @@
 class_name Gateway
 extends StaticBody3D
-## Gateway for traveling between maps. Can link to field lobbies.
-## Town gateways can only be configured by the host.
-## Field gateways can be configured by any player.
+## Gateway for traveling between maps. Can link to fields or towns.
+## Town gateways can only link to fields.
+## Field gateways can link to towns (return) or other fields.
 
-## Emitted when a player uses this gateway to travel to an existing field
+## Link type distinguishes destination types for travel logic
+enum LinkType { NONE, FIELD, TOWN }
+
+## Emitted when a player uses this gateway to travel to an existing destination
 signal travel_requested(player: Node3D, destination_lobby_id: int)
 
 ## Emitted when a player travels and the field needs to be created first
@@ -31,6 +34,18 @@ signal configure_requested(player: Node3D)
 ## The pearl type used to create this field (empty if not set)
 @export var pearl_type: StringName = &""
 
+## The specific gateway ID to arrive at in the destination (-1 = use default logic)
+## Used when linking to a specific town gateway via the "Link to Town" feature.
+@export var linked_gateway_id: int = -1
+
+## The type of link: NONE, FIELD, or TOWN
+## Town gateways only use FIELD. Field gateways use TOWN (return) or FIELD (chain).
+@export var link_type: int = LinkType.NONE
+
+## Steam ID of the town owner (only used when link_type == TOWN)
+## This is the stable identifier for town destinations.
+@export var linked_owner_steam_id: int = 0
+
 @onready var _interactable: Interactable = $Interactable
 @onready var _mesh: MeshInstance3D = $MeshInstance3D
 @onready var _particles: GPUParticles3D = $GPUParticles3D
@@ -50,21 +65,41 @@ func _ready() -> void:
 
 ## Configure the gateway for a new field (no lobby created yet)
 func set_config(field_seed: int, map_name: String, p_pearl_type: StringName = &"") -> void:
+	link_type = LinkType.FIELD
 	generation_seed = field_seed
 	linked_map_name = map_name
 	linked_lobby_id = 0  # No lobby yet
 	pearl_type = p_pearl_type
+	linked_owner_steam_id = 0  # Field links don't use owner ID
 	_is_active = field_seed > 0
 	_update_visual_state()
 	_update_prompt_text()
 
 
-## Set the gateway link to an existing destination
-func set_link(lobby_id: int, map_name: String) -> void:
+## Set the gateway link to an existing field destination
+func set_link(lobby_id: int, map_name: String, target_gateway_id: int = -1) -> void:
+	link_type = LinkType.FIELD
 	linked_lobby_id = lobby_id
 	linked_map_name = map_name
+	linked_gateway_id = target_gateway_id
+	linked_owner_steam_id = 0  # Field links don't use owner ID
 	# Keep the seed for reference but lobby_id takes precedence
 	_is_active = lobby_id > 0 or generation_seed > 0
+	_update_visual_state()
+	_update_prompt_text()
+
+
+## Set the gateway link to a player's town (only used by field gateways)
+func set_town_link(owner_steam_id: int, lobby_id: int, map_name: String,
+				   target_gateway_id: int = -1) -> void:
+	link_type = LinkType.TOWN
+	linked_owner_steam_id = owner_steam_id
+	linked_lobby_id = lobby_id  # Cached, may be stale
+	linked_map_name = map_name
+	linked_gateway_id = target_gateway_id
+	generation_seed = 0  # Town links don't have seeds
+	pearl_type = &""
+	_is_active = owner_steam_id > 0
 	_update_visual_state()
 	_update_prompt_text()
 
@@ -77,23 +112,44 @@ func set_lobby_id(lobby_id: int) -> void:
 
 ## Clear the gateway link
 func clear_link() -> void:
+	link_type = LinkType.NONE
 	linked_lobby_id = 0
 	linked_map_name = ""
 	generation_seed = 0
 	pearl_type = &""
+	linked_gateway_id = -1
+	linked_owner_steam_id = 0
 	_is_active = false
 	_update_visual_state()
 	_update_prompt_text()
 
 
-## Check if this gateway is configured (has seed or lobby)
+## Check if this gateway is configured
 func has_link() -> bool:
-	return linked_lobby_id > 0 or generation_seed > 0
+	return link_type != LinkType.NONE
 
 
-## Check if the field needs to be created (configured but no lobby yet)
+## Check if the field needs to be created (field link configured but no lobby yet)
 func needs_field_creation() -> bool:
-	return linked_lobby_id == 0 and generation_seed > 0
+	return link_type == LinkType.FIELD and linked_lobby_id == 0 and generation_seed > 0
+
+
+## Check if this is a field link
+func is_field_link() -> bool:
+	return link_type == LinkType.FIELD
+
+
+## Check if this is a town link (return to player's town)
+func is_town_link() -> bool:
+	return link_type == LinkType.TOWN
+
+
+## Check if the destination needs lobby lookup (town links may have stale cached lobby IDs)
+func needs_lobby_lookup() -> bool:
+	if link_type == LinkType.TOWN:
+		# Town links always need lookup since cached lobby may be stale
+		return linked_lobby_id == 0 or true  # TODO: implement lobby lookup
+	return false
 
 
 ## Get the direction name for this gateway

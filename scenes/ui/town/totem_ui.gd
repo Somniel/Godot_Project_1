@@ -13,7 +13,6 @@ const DIRECTION_NAMES: Array[String] = ["North", "East", "South", "West"]
 @onready var _player_count_label: Label = $Panel/VBoxContainer/PlayerCountLabel
 @onready var _host_label: Label = $Panel/VBoxContainer/HostLabel
 @onready var _close_button: Button = $Panel/VBoxContainer/CloseButton
-@onready var _gateways_container: VBoxContainer = $Panel/VBoxContainer/GatewaysContainer
 
 var _is_host: bool = false
 var _gateway_rows: Array[HBoxContainer] = []
@@ -70,6 +69,9 @@ func show_ui(map_name: String, player_count: int, host_name: String, is_host: bo
 
 	visible = true
 
+	# Register with UI manager to block player input
+	UIManager.register_blocking_ui()
+
 
 ## Set gateway connection data
 ## gateways: Array of dictionaries with keys: linked_map_name, has_link, is_origin
@@ -96,6 +98,10 @@ func update_town_name(town_name: String) -> void:
 
 func _close() -> void:
 	visible = false
+
+	# Unregister from UI manager to allow player input
+	UIManager.unregister_blocking_ui()
+
 	closed.emit()
 
 

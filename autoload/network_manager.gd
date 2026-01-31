@@ -10,6 +10,7 @@ signal host_started
 signal client_started
 signal connection_failed(reason: String)
 signal disconnected
+signal gateway_state_received(gateway_id: int, data: Dictionary)
 
 var _multiplayer_peer: MultiplayerPeer = null
 var _is_networking_active: bool = false
@@ -211,3 +212,246 @@ func _on_connection_to_server_failed() -> void:
 	print("NetworkManager: Connection to server failed")
 	disconnect_peer()
 	connection_failed.emit("Connection to server failed")
+
+
+# Gateway sync RPCs
+
+@rpc("authority", "call_remote", "reliable")
+func sync_gateway_state(gateway_id: int, linked_lobby_id: int, linked_map_name: String,
+						generation_seed: int, pearl_type: String, linked_gateway_id: int,
+						link_type: String = "none", linked_owner_steam_id: int = 0) -> void:
+	## Called on clients by server to sync a gateway's state.
+	var data: Dictionary = {
+		"linked_lobby_id": linked_lobby_id,
+		"linked_map_name": linked_map_name,
+		"generation_seed": generation_seed,
+		"pearl_type": pearl_type,
+		"linked_gateway_id": linked_gateway_id,
+		"link_type": link_type,
+		"linked_owner_steam_id": linked_owner_steam_id
+	}
+	gateway_state_received.emit(gateway_id, data)
+
+
+func broadcast_gateway_state(gateway_id: int, linked_lobby_id: int, linked_map_name: String,
+							 generation_seed: int, pearl_type: StringName,
+							 linked_gateway_id: int = -1, link_type: String = "field",
+							 linked_owner_steam_id: int = 0) -> void:
+	## Called by server to broadcast gateway state to all connected clients.
+	if not multiplayer.is_server():
+		return
+
+	sync_gateway_state.rpc(gateway_id, linked_lobby_id, linked_map_name,
+						   generation_seed, String(pearl_type), linked_gateway_id,
+						   link_type, linked_owner_steam_id)
+
+
+func sync_gateway_state_to_peer(peer_id: int, gateway_id: int, linked_lobby_id: int,
+								linked_map_name: String, generation_seed: int,
+								pearl_type: StringName, linked_gateway_id: int = -1,
+								link_type: String = "field", linked_owner_steam_id: int = 0) -> void:
+	## Called by server to sync gateway state to a specific peer (e.g., on join).
+	if not multiplayer.is_server():
+		return
+
+	sync_gateway_state.rpc_id(peer_id, gateway_id, linked_lobby_id, linked_map_name,
+							  generation_seed, String(pearl_type), linked_gateway_id,
+							  link_type, linked_owner_steam_id)
+
+
+# Client-to-server gateway configuration request
+
+## Emitted on server when a client requests to configure a gateway
+signal client_gateway_config_requested(peer_id: int, gateway_id: int, generation_seed: int,
+									   field_name: String, pearl_type: String)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func request_gateway_config(gateway_id: int, generation_seed: int, field_name: String,
+							pearl_type: String) -> void:
+	## Called by client to request the server configure a gateway.
+	## Server will validate and broadcast the change to all clients.
+	if not multiplayer.is_server():
+		return
+
+	var sender_id: int = multiplayer.get_remote_sender_id()
+	print("NetworkManager: Gateway config request from peer %d for gateway %d" % [sender_id, gateway_id])
+	client_gateway_config_requested.emit(sender_id, gateway_id, generation_seed, field_name, pearl_type)
+
+
+func send_gateway_config_request(gateway_id: int, generation_seed: int, field_name: String,
+								 pearl_type: StringName) -> void:
+	## Called by client to send a gateway configuration request to the server.
+	if multiplayer.is_server():
+		return  # Server doesn't need to send requests to itself
+
+	request_gateway_config.rpc_id(1, gateway_id, generation_seed, field_name, String(pearl_type))
+
+
+## Emitted on client when server confirms a gateway configuration
+signal gateway_config_confirmed(
+	gateway_id: int, generation_seed: int, field_name: String, pearl_type: String
+)
+
+## Emitted on client when server rejects a gateway configuration
+signal gateway_config_rejected(gateway_id: int, reason: String)
+
+
+@rpc("authority", "call_remote", "reliable")
+func confirm_gateway_config(gateway_id: int, generation_seed: int,
+							field_name: String, pearl_type: String) -> void:
+	## Called on client by server to confirm a gateway configuration.
+	gateway_config_confirmed.emit(gateway_id, generation_seed, field_name, pearl_type)
+
+
+@rpc("authority", "call_remote", "reliable")
+func reject_gateway_config(gateway_id: int, reason: String) -> void:
+	## Called on client by server to reject a gateway configuration.
+	gateway_config_rejected.emit(gateway_id, reason)
+
+
+func send_gateway_config_confirmation(peer_id: int, gateway_id: int,
+									   generation_seed: int, field_name: String,
+									   pearl_type: StringName) -> void:
+	## Called by server to confirm a gateway config to the requesting client.
+	if not multiplayer.is_server():
+		return
+	confirm_gateway_config.rpc_id(
+		peer_id, gateway_id, generation_seed, field_name, String(pearl_type)
+	)
+
+
+func send_gateway_config_rejection(peer_id: int, gateway_id: int,
+									reason: String) -> void:
+	## Called by server to reject a gateway config request.
+	if not multiplayer.is_server():
+		return
+	reject_gateway_config.rpc_id(peer_id, gateway_id, reason)
+
+
+# =============================================================================
+# Field State Cache Sync RPCs
+# =============================================================================
+
+## Emitted when cache data is received from network
+signal field_cache_received(entries: Array, remappings: Dictionary)
+
+
+@rpc("authority", "call_remote", "reliable")
+func sync_field_cache(entries_json: String, remappings_json: String) -> void:
+	## Called on clients by server to sync field cache entries.
+	var entries: Array = []
+	var remappings: Dictionary = {}
+
+	# Parse entries JSON
+	var parsed_entries: Variant = JSON.parse_string(entries_json)
+	if parsed_entries is Array:
+		@warning_ignore("unsafe_cast")
+		entries = parsed_entries as Array
+
+	# Parse remappings JSON
+	var parsed_remappings: Variant = JSON.parse_string(remappings_json)
+	if parsed_remappings is Dictionary:
+		@warning_ignore("unsafe_cast")
+		remappings = parsed_remappings as Dictionary
+
+	print("NetworkManager: Received field cache sync (%d entries, %d remappings)" % [
+		entries.size(), remappings.size()
+	])
+	field_cache_received.emit(entries, remappings)
+
+
+func broadcast_field_cache(entries: Array[Dictionary], remappings: Dictionary) -> void:
+	## Called by server to broadcast field cache to all connected clients.
+	if not multiplayer.is_server():
+		return
+
+	var entries_json: String = JSON.stringify(entries)
+	var remappings_json: String = JSON.stringify(remappings)
+	sync_field_cache.rpc(entries_json, remappings_json)
+	print("NetworkManager: Broadcast field cache (%d entries, %d remappings)" % [
+		entries.size(), remappings.size()
+	])
+
+
+func sync_field_cache_to_peer(peer_id: int, entries: Array[Dictionary], remappings: Dictionary) -> void:
+	## Called by server to sync field cache to a specific peer (e.g., on join).
+	if not multiplayer.is_server():
+		return
+
+	var entries_json: String = JSON.stringify(entries)
+	var remappings_json: String = JSON.stringify(remappings)
+	sync_field_cache.rpc_id(peer_id, entries_json, remappings_json)
+	print("NetworkManager: Sent field cache to peer %d (%d entries, %d remappings)" % [
+		peer_id, entries.size(), remappings.size()
+	])
+
+
+# =============================================================================
+# Field State Version Exchange RPCs
+# =============================================================================
+
+## Emitted when a peer sends their field state version
+signal field_version_received(
+	peer_id: int, generation_seed: int, version: int, modifier_steam_id: int
+)
+
+## Emitted when a peer requests field state
+signal field_state_requested(peer_id: int, generation_seed: int)
+
+## Emitted when field state is received from a peer
+signal field_state_received(sender_id: int, generation_seed: int, state_json: String)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func exchange_field_version(
+	generation_seed: int, version: int, modifier_steam_id: int
+) -> void:
+	## Called to exchange field state versions between peers.
+	## Both host and clients can call this to share their version.
+	var sender_id: int = multiplayer.get_remote_sender_id()
+	print("NetworkManager: Received field version from peer %d (seed %d, v%d, modifier %d)" % [
+		sender_id, generation_seed, version, modifier_steam_id
+	])
+	field_version_received.emit(
+		sender_id, generation_seed, version, modifier_steam_id
+	)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func request_field_state(generation_seed: int) -> void:
+	## Called by a peer to request full field state from another peer.
+	## Typically called when the requester has an older version.
+	var sender_id: int = multiplayer.get_remote_sender_id()
+	print("NetworkManager: Field state request from peer %d for seed %d" % [sender_id, generation_seed])
+	field_state_requested.emit(sender_id, generation_seed)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func send_field_state(generation_seed: int, state_json: String) -> void:
+	## Called to send full field state to a peer who requested it.
+	var sender_id: int = multiplayer.get_remote_sender_id()
+	print("NetworkManager: Received field state from peer %d for seed %d" % [sender_id, generation_seed])
+	field_state_received.emit(sender_id, generation_seed, state_json)
+
+
+func broadcast_field_version(
+	generation_seed: int, version: int, modifier_steam_id: int
+) -> void:
+	## Called to broadcast field version to all peers.
+	exchange_field_version.rpc(generation_seed, version, modifier_steam_id)
+
+
+func send_field_version_to_peer(
+	peer_id: int, generation_seed: int, version: int,
+	modifier_steam_id: int
+) -> void:
+	## Called to send field version to a specific peer.
+	exchange_field_version.rpc_id(
+		peer_id, generation_seed, version, modifier_steam_id
+	)
+
+
+func send_field_state_to_peer(peer_id: int, generation_seed: int, state_json: String) -> void:
+	## Called to send full field state to a specific peer.
+	send_field_state.rpc_id(peer_id, generation_seed, state_json)
