@@ -147,31 +147,39 @@ func test_set_gateway_link_preserves_linked_gateway_id() -> void:
 
 
 # =============================================================================
-# Linked Fields
+# Linked Fields (CRDT format)
 # =============================================================================
 
-func test_set_linked_field_and_get() -> void:
-	var items: Array[Dictionary] = [
-		{"item_id": "flame_pearl", "quantity": 2},
-	]
-	var gws: Array[Dictionary] = [
-		{"id": 0, "link_type": "none"},
-	]
-	_storage.set_linked_field(42, &"flame_pearl", items, gws)
+func test_set_linked_field_crdt_and_get() -> void:
+	var removed: Dictionary = {
+		"gen_42_0": {"field_lobby_id": 100, "field_host_steam_id": 5000, "timestamp": 1}
+	}
+	var placed: Dictionary = {
+		"placed_5000_1_0": {
+			"instance_id": "placed_5000_1_0",
+			"item_id": "flame_pearl",
+			"position": {"x": 1.0, "y": 0.0, "z": 0.0},
+			"quantity": 1
+		}
+	}
+	var gw_versions: Array[int] = [1, 0, 0, 0]
+	var gws: Array[Dictionary] = [{"id": 0, "link_type": "none"}]
+
+	_storage.set_linked_field(42, &"flame_pearl", removed, placed, gw_versions, gws)
 
 	var result: Variant = _storage.get_linked_field(42)
 	assert_not_null(result, "Should return field data")
 
 	var data: Dictionary = result
+	assert_eq(data["format_version"], 1, "Should have format_version 1")
 	assert_eq(data["pearl_type"], "flame_pearl")
-	assert_eq(data["items"].size(), 1)
+	assert_eq(data["removed_items"].size(), 1)
+	assert_eq(data["placed_items"].size(), 1)
 	assert_eq(data["gateways"].size(), 1)
 
 
 func test_has_linked_field_true() -> void:
-	var items: Array[Dictionary] = []
-	var gws: Array[Dictionary] = []
-	_storage.set_linked_field(99, &"", items, gws)
+	_storage.set_linked_field(99, &"", {}, {}, [0, 0, 0, 0], [])
 	assert_true(_storage.has_linked_field(99))
 
 
@@ -180,9 +188,7 @@ func test_has_linked_field_false() -> void:
 
 
 func test_get_linked_field_returns_deep_copy() -> void:
-	var items: Array[Dictionary] = [{"item_id": "pearl", "quantity": 5}]
-	var gws: Array[Dictionary] = []
-	_storage.set_linked_field(50, &"air_pearl", items, gws)
+	_storage.set_linked_field(50, &"air_pearl", {}, {}, [0, 0, 0, 0], [])
 
 	var copy: Variant = _storage.get_linked_field(50)
 	assert_not_null(copy)
@@ -201,35 +207,163 @@ func test_get_linked_field_returns_null_when_missing() -> void:
 
 
 func test_remove_linked_field() -> void:
-	var items: Array[Dictionary] = []
-	var gws: Array[Dictionary] = []
-	_storage.set_linked_field(60, &"", items, gws)
+	_storage.set_linked_field(60, &"", {}, {}, [0, 0, 0, 0], [])
 	_storage.remove_linked_field(60)
 	assert_false(_storage.has_linked_field(60))
 
 
-func test_set_linked_field_stores_version_and_modifier() -> void:
-	var items: Array[Dictionary] = []
-	var gws: Array[Dictionary] = []
-	_storage.set_linked_field(70, &"water_pearl", items, gws, 5, 76561198012345678)
-
+func test_set_linked_field_stores_modifier() -> void:
+	_storage.set_linked_field(
+		70, &"water_pearl", {}, {}, [0, 0, 0, 0], [], 76561198012345678
+	)
 	var data: Dictionary = _storage.get_linked_field(70)
-	assert_eq(data["state_version"], 5)
 	assert_eq(data["last_modified_by"], 76561198012345678)
 
 
-func test_set_linked_field_auto_increments_version() -> void:
-	var items: Array[Dictionary] = []
-	var gws: Array[Dictionary] = []
-	# First save: version not specified, should start at 1
-	_storage.set_linked_field(80, &"", items, gws)
-	var data1: Dictionary = _storage.get_linked_field(80)
-	assert_eq(data1["state_version"], 1)
+# =============================================================================
+# CRDT Merge (merge_linked_field)
+# =============================================================================
 
-	# Second save: should auto-increment to 2
-	_storage.set_linked_field(80, &"", items, gws)
-	var data2: Dictionary = _storage.get_linked_field(80)
-	assert_eq(data2["state_version"], 2)
+func test_merge_linked_field_unions_removed() -> void:
+	# Store initial state with one removal
+	var initial_removed: Dictionary = {
+		"gen_42_0": {"field_lobby_id": 100, "field_host_steam_id": 5000, "timestamp": 1}
+	}
+	_storage.set_linked_field(42, &"flame_pearl", initial_removed, {}, [0, 0, 0, 0], [])
+
+	# Merge incoming with a different removal
+	var incoming_removed: Dictionary = {
+		"gen_42_1": {"field_lobby_id": 200, "field_host_steam_id": 6000, "timestamp": 2}
+	}
+	_storage.merge_linked_field(42, incoming_removed, {}, [0, 0, 0, 0], [])
+
+	var data: Dictionary = _storage.get_linked_field(42)
+	var stored_removed: Dictionary = data["removed_items"]
+	assert_true(stored_removed.has("gen_42_0"), "Original removal preserved")
+	assert_true(stored_removed.has("gen_42_1"), "Incoming removal added")
+	assert_eq(stored_removed.size(), 2, "Union should have both")
+
+
+func test_merge_linked_field_unions_placed() -> void:
+	# Store initial state with one placed item
+	var initial_placed: Dictionary = {
+		"placed_5000_1_0": {
+			"instance_id": "placed_5000_1_0",
+			"item_id": "flame_pearl",
+			"position": {"x": 1.0, "y": 0.0, "z": 0.0},
+			"quantity": 1
+		}
+	}
+	_storage.set_linked_field(42, &"flame_pearl", {}, initial_placed, [0, 0, 0, 0], [])
+
+	# Merge incoming with a different placed item
+	var incoming_placed: Dictionary = {
+		"placed_6000_2_0": {
+			"instance_id": "placed_6000_2_0",
+			"item_id": "water_pearl",
+			"position": {"x": 3.0, "y": 0.0, "z": 0.0},
+			"quantity": 1
+		}
+	}
+	_storage.merge_linked_field(42, {}, incoming_placed, [0, 0, 0, 0], [])
+
+	var data: Dictionary = _storage.get_linked_field(42)
+	var stored_placed: Dictionary = data["placed_items"]
+	assert_true(stored_placed.has("placed_5000_1_0"), "Original placed preserved")
+	assert_true(stored_placed.has("placed_6000_2_0"), "Incoming placed added")
+	assert_eq(stored_placed.size(), 2, "Union should have both")
+
+
+func test_merge_linked_field_creates_if_missing() -> void:
+	# No existing entry for seed 99
+	assert_false(_storage.has_linked_field(99))
+
+	var removed: Dictionary = {
+		"gen_99_0": {"field_lobby_id": 1, "field_host_steam_id": 1, "timestamp": 1}
+	}
+	_storage.merge_linked_field(99, removed, {}, [0, 0, 0, 0], [])
+
+	assert_true(_storage.has_linked_field(99), "Should create new entry")
+	var data: Dictionary = _storage.get_linked_field(99)
+	assert_eq(data["format_version"], 1)
+	assert_eq(data["removed_items"].size(), 1)
+
+
+func test_merge_linked_field_per_slot_gateway_version_max() -> void:
+	_storage.set_linked_field(42, &"", {}, {}, [1, 0, 3, 0], [])
+
+	# Merge with [0, 2, 0, 5] - per-slot max should be [1, 2, 3, 5]
+	_storage.merge_linked_field(42, {}, {}, [0, 2, 0, 5], [])
+
+	var data: Dictionary = _storage.get_linked_field(42)
+	var gv: Array = data["gateway_versions"]
+	assert_eq(int(gv[0]), 1, "Slot 0: local higher")
+	assert_eq(int(gv[1]), 2, "Slot 1: incoming higher")
+	assert_eq(int(gv[2]), 3, "Slot 2: local higher")
+	assert_eq(int(gv[3]), 5, "Slot 3: incoming higher")
+
+
+func test_merge_linked_field_preserves_first_write() -> void:
+	# Store with one removal
+	var initial: Dictionary = {
+		"gen_42_0": {"field_lobby_id": 100, "field_host_steam_id": 5000, "timestamp": 1}
+	}
+	_storage.set_linked_field(42, &"", initial, {}, [0, 0, 0, 0], [])
+
+	# Merge same key with different metadata
+	var incoming: Dictionary = {
+		"gen_42_0": {"field_lobby_id": 999, "field_host_steam_id": 9999, "timestamp": 999}
+	}
+	_storage.merge_linked_field(42, incoming, {}, [0, 0, 0, 0], [])
+
+	var data: Dictionary = _storage.get_linked_field(42)
+	var entry: Dictionary = data["removed_items"]["gen_42_0"]
+	assert_eq(entry["field_lobby_id"], 100, "First write should win")
+
+
+func test_get_linked_field_migrates_old_format() -> void:
+	# Inject old-format data directly (no format_version, has "items" array)
+	# This simulates reading a save from before the CRDT migration
+	var old_data: Dictionary = {
+		"pearl_type": "flame_pearl",
+		"items": [],
+		"gateways": [{"id": 0, "link_type": "none"}]
+	}
+	@warning_ignore("unsafe_cast")
+	var linked_fields: Dictionary = _storage._state["linked_fields"] as Dictionary
+	linked_fields["42"] = old_data
+
+	# get_linked_field should auto-migrate
+	var result: Variant = _storage.get_linked_field(42)
+	assert_not_null(result)
+
+	var data: Dictionary = result
+	assert_eq(data["format_version"], 1, "Should be migrated to format v1")
+	assert_true(data.has("removed_items"), "Should have CRDT removed_items")
+	assert_true(data.has("placed_items"), "Should have CRDT placed_items")
+	assert_true(data.has("gateway_versions"), "Should have gateway_versions")
+
+
+func test_merge_auto_migrates_old_format() -> void:
+	# Inject old-format data
+	var old_data: Dictionary = {
+		"pearl_type": "flame_pearl",
+		"items": [],
+		"gateways": []
+	}
+	@warning_ignore("unsafe_cast")
+	var linked_fields: Dictionary = _storage._state["linked_fields"] as Dictionary
+	linked_fields["42"] = old_data
+
+	# Merge should auto-migrate existing data before merging
+	var incoming: Dictionary = {
+		"gen_42_0": {"field_lobby_id": 1, "field_host_steam_id": 1, "timestamp": 1}
+	}
+	_storage.merge_linked_field(42, incoming, {}, [0, 0, 0, 0], [])
+
+	var data: Dictionary = _storage.get_linked_field(42)
+	assert_eq(data["format_version"], 1, "Should be migrated")
+	assert_true(data["removed_items"].has("gen_42_0"), "Merge should succeed after migration")
 
 
 # =============================================================================
@@ -237,10 +371,8 @@ func test_set_linked_field_auto_increments_version() -> void:
 # =============================================================================
 
 func test_cleanup_orphaned_linked_fields_removes_unreferenced() -> void:
-	var items: Array[Dictionary] = []
-	var gws: Array[Dictionary] = []
 	# Add a linked field with seed 999 (not referenced by any gateway)
-	_storage.set_linked_field(999, &"", items, gws)
+	_storage.set_linked_field(999, &"", {}, {}, [0, 0, 0, 0], [])
 	assert_true(_storage.has_linked_field(999))
 
 	_storage.cleanup_orphaned_linked_fields()
@@ -251,9 +383,7 @@ func test_cleanup_orphaned_linked_fields_preserves_referenced() -> void:
 	# Configure gateway 0 with seed 555
 	_storage.set_gateway_config(0, 555, "Test Field", &"flame_pearl")
 	# Add linked field with matching seed
-	var items: Array[Dictionary] = [{"item_id": "flame_pearl", "quantity": 1}]
-	var gws: Array[Dictionary] = []
-	_storage.set_linked_field(555, &"flame_pearl", items, gws)
+	_storage.set_linked_field(555, &"flame_pearl", {}, {}, [0, 0, 0, 0], [])
 
 	_storage.cleanup_orphaned_linked_fields()
 	assert_true(_storage.has_linked_field(555), "Referenced field should survive")

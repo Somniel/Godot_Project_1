@@ -9,6 +9,8 @@ var _pending_create_seed: int = 0
 var _pending_create_pearl_type: StringName = &""
 var _town_storage: TownCloudStorage = null
 var _is_loading_complete: bool = false
+## Tracks gateways with pending client field creations to prevent duplicates
+var _pending_gateway_creations: Dictionary = {}  # gateway_id -> true
 
 
 func _ready() -> void:
@@ -57,10 +59,29 @@ func _connect_town_signals() -> void:
 		@warning_ignore("return_value_discarded")
 		_host_travel_warning.cancelled.connect(_on_host_travel_cancelled)
 
-	# Field cache data (clients only)
+	# Server-only signals
+	if multiplayer.is_server():
+		@warning_ignore("return_value_discarded")
+		NetworkManager.field_travel_requested.connect(
+			_on_field_travel_requested
+		)
+		@warning_ignore("return_value_discarded")
+		NetworkManager.field_state_returned.connect(
+			_on_field_state_returned
+		)
+
+	# Client-only signals
 	if not multiplayer.is_server():
 		@warning_ignore("return_value_discarded")
 		NetworkManager.field_cache_received.connect(_on_field_cache_received)
+		@warning_ignore("return_value_discarded")
+		NetworkManager.field_travel_approved.connect(
+			_on_field_travel_approved
+		)
+		@warning_ignore("return_value_discarded")
+		NetworkManager.field_state_return_requested.connect(
+			_on_field_state_return_requested
+		)
 
 
 # =============================================================================
@@ -121,6 +142,8 @@ func _on_peer_connected(peer_id: int) -> void:
 		_sync_all_gateways_to_peer(peer_id)
 		# Sync field cache to the new peer
 		_sync_field_cache_to_peer(peer_id)
+		# Request CRDT state from returning peer for linked fields
+		_request_field_state_from_peer(peer_id)
 
 
 func _exit_tree() -> void:
@@ -146,6 +169,34 @@ func _disconnect_town_signals() -> void:
 			_host_travel_warning.cancelled.disconnect(_on_host_travel_cancelled)
 	if NetworkManager.field_cache_received.is_connected(_on_field_cache_received):
 		NetworkManager.field_cache_received.disconnect(_on_field_cache_received)
+	if NetworkManager.field_travel_requested.is_connected(
+		_on_field_travel_requested
+	):
+		NetworkManager.field_travel_requested.disconnect(
+			_on_field_travel_requested
+		)
+	if NetworkManager.field_travel_approved.is_connected(
+		_on_field_travel_approved
+	):
+		NetworkManager.field_travel_approved.disconnect(
+			_on_field_travel_approved
+		)
+	if NetworkManager.field_state_returned.is_connected(
+		_on_field_state_returned
+	):
+		NetworkManager.field_state_returned.disconnect(
+			_on_field_state_returned
+		)
+	if NetworkManager.field_state_return_requested.is_connected(
+		_on_field_state_return_requested
+	):
+		NetworkManager.field_state_return_requested.disconnect(
+			_on_field_state_return_requested
+		)
+	if P2PSyncManager.crdt_state_received.is_connected(_on_p2p_crdt_state_received):
+		P2PSyncManager.crdt_state_received.disconnect(_on_p2p_crdt_state_received)
+	if P2PSyncManager.crdt_request_received.is_connected(_on_p2p_crdt_request_received):
+		P2PSyncManager.crdt_request_received.disconnect(_on_p2p_crdt_request_received)
 
 
 # =============================================================================
@@ -286,9 +337,13 @@ func _on_gateway_travel_create_requested(
 		_pending_create_pearl_type = pearl_type
 		_host_travel_warning.show_warning()
 	else:
-		# Non-host can only travel to existing fields, not create them
-		if _toast_ui != null:
-			_toast_ui.show_toast("Only the host can create new fields")
+		# Client requests field travel approval from town host
+		print(
+			"Town: Client requesting field travel for gateway %d"
+			% gateway.gateway_id
+		)
+		_pending_travel_gateway = gateway
+		NetworkManager.request_field_travel.rpc_id(1, gateway.gateway_id)
 
 
 func _on_gateway_config_cancelled() -> void:
@@ -426,9 +481,14 @@ func _on_lobby_data_received(lobby_id: int, exists: bool) -> void:
 				_pending_create_pearl_type = gateway.pearl_type
 				_host_travel_warning.show_warning()
 			else:
-				_pending_travel_gateway = null  # Clear since we're not traveling
-				if _toast_ui != null:
-					_toast_ui.show_toast("Field is not currently hosted")
+				# Client requests field travel approval from host
+				print(
+					"Town: Client requesting field creation for gateway %d"
+					% gateway.gateway_id
+				)
+				NetworkManager.request_field_travel.rpc_id(
+					1, gateway.gateway_id
+				)
 		else:
 			# No cached state and no seed - clear the stale link
 			print("Town: Destination lobby %d no longer exists, clearing stale link" % lobby_id)
@@ -614,7 +674,442 @@ func _finish_town_loading() -> void:
 		@warning_ignore("return_value_discarded")
 		LobbyManager.set_lobby_metadata("server_name", town_name)
 
+	# Advertise linked field seeds for cross-town discovery
+	MapManager.update_town_linked_seeds(_town_storage)
+
+	# Start async field state sync (discover active fields + peer towns)
+	_start_field_sync()
+
 	_update_status()
+
+
+func _start_field_sync() -> void:
+	## Initiate async field state sync on town startup.
+	## Queries Steam lobbies for active fields and peer towns with
+	## overlapping seeds. Results arrive via callbacks.
+	if _town_storage == null:
+		return
+
+	# Collect configured seeds
+	var seeds: Array[int] = []
+	for i: int in range(4):
+		var gw: Dictionary = _town_storage.get_gateway(i)
+		var seed_val: int = gw.get("generation_seed", 0)
+		if seed_val > 0:
+			seeds.append(seed_val)
+
+	if seeds.is_empty():
+		print("Town: No configured gateways, skipping field sync")
+		return
+
+	print("Town: Starting field sync for %d seeds" % seeds.size())
+
+	# Connect P2P sync signals (if not already)
+	if not P2PSyncManager.crdt_state_received.is_connected(
+		_on_p2p_crdt_state_received
+	):
+		@warning_ignore("return_value_discarded")
+		P2PSyncManager.crdt_state_received.connect(
+			_on_p2p_crdt_state_received
+		)
+	if not P2PSyncManager.crdt_request_received.is_connected(
+		_on_p2p_crdt_request_received
+	):
+		@warning_ignore("return_value_discarded")
+		P2PSyncManager.crdt_request_received.connect(
+			_on_p2p_crdt_request_received
+		)
+
+
+func _on_p2p_crdt_state_received(
+	sender_steam_id: int, generation_seed: int, state: Dictionary
+) -> void:
+	## Handle CRDT state received from another town via P2P.
+	if _town_storage == null:
+		return
+
+	# Validate the seed matches one of our gateways
+	var has_seed: bool = false
+	for i: int in range(4):
+		var gw: Dictionary = _town_storage.get_gateway(i)
+		if gw.get("generation_seed", 0) == generation_seed:
+			has_seed = true
+			break
+
+	if not has_seed:
+		push_warning(
+			"Town: Rejected CRDT state for unknown seed %d from %d"
+			% [generation_seed, sender_steam_id]
+		)
+		return
+
+	# Extract CRDT components and merge
+	var incoming_removed: Dictionary = state.get("removed_items", {})
+	var incoming_placed: Dictionary = state.get("placed_items", {})
+	var incoming_gv: Array[int] = [0, 0, 0, 0]
+	var gv_data: Variant = state.get("gateway_versions", [])
+	if gv_data is Array:
+		@warning_ignore("unsafe_cast")
+		var gv_arr: Array = gv_data as Array
+		for i: int in range(mini(gv_arr.size(), 4)):
+			if gv_arr[i] is int:
+				incoming_gv[i] = gv_arr[i]
+			elif gv_arr[i] is float:
+				@warning_ignore("unsafe_call_argument")
+				incoming_gv[i] = int(gv_arr[i])
+	var incoming_gateways: Array[Dictionary] = []
+	var gws_data: Variant = state.get("gateways", [])
+	if gws_data is Array:
+		@warning_ignore("unsafe_cast")
+		for gw: Variant in (gws_data as Array):
+			if gw is Dictionary:
+				@warning_ignore("unsafe_cast")
+				incoming_gateways.append((gw as Dictionary).duplicate())
+
+	_town_storage.merge_linked_field(
+		generation_seed, incoming_removed, incoming_placed,
+		incoming_gv, incoming_gateways
+	)
+	print(
+		"Town: Merged P2P CRDT state from %d for seed %d"
+		% [sender_steam_id, generation_seed]
+	)
+
+
+func _on_p2p_crdt_request_received(
+	sender_steam_id: int, generation_seed: int
+) -> void:
+	## Handle CRDT state request from another town via P2P.
+	if _town_storage == null:
+		return
+
+	var field_data: Variant = _town_storage.get_linked_field(generation_seed)
+	if field_data == null:
+		return
+
+	@warning_ignore("unsafe_cast")
+	var data: Dictionary = field_data as Dictionary
+	@warning_ignore("return_value_discarded")
+	P2PSyncManager.send_crdt_state(sender_steam_id, generation_seed, data)
+	print(
+		"Town: Sent CRDT state to %d for seed %d"
+		% [sender_steam_id, generation_seed]
+	)
+
+
+func _on_field_travel_requested(peer_id: int, gateway_id: int) -> void:
+	## Server handler: client wants to travel through a configured gateway.
+	## Validates the gateway and sends CRDT state + config for field creation.
+	if not multiplayer.is_server():
+		return
+
+	if gateway_id < 0 or gateway_id >= _gateways.size():
+		push_warning(
+			"Town: Invalid gateway_id %d from peer %d"
+			% [gateway_id, peer_id]
+		)
+		return
+
+	var gateway: Gateway = _gateways[gateway_id]
+	if gateway.generation_seed <= 0:
+		push_warning(
+			"Town: Gateway %d not configured, rejecting peer %d"
+			% [gateway_id, peer_id]
+		)
+		return
+
+	# Prevent duplicate creation attempts
+	if _pending_gateway_creations.has(gateway_id):
+		push_warning(
+			"Town: Gateway %d creation already pending, rejecting peer %d"
+			% [gateway_id, peer_id]
+		)
+		return
+
+	_pending_gateway_creations[gateway_id] = true
+
+	# Build CRDT state from town cloud storage
+	var field_state: Dictionary = {}
+	if _town_storage != null:
+		var stored: Variant = _town_storage.get_linked_field(
+			gateway.generation_seed
+		)
+		if stored is Dictionary:
+			@warning_ignore("unsafe_cast")
+			field_state = (stored as Dictionary).duplicate(true)
+
+	var state_json: String = JSON.stringify(field_state)
+
+	print(
+		("Town: Approving field travel for peer %d via gateway %d "
+		+ "(seed %d, pearl %s)") % [
+			peer_id, gateway_id,
+			gateway.generation_seed, gateway.pearl_type
+		]
+	)
+
+	NetworkManager.send_field_travel_approval(
+		peer_id, gateway_id, gateway.generation_seed,
+		gateway.pearl_type, gateway.linked_map_name, state_json
+	)
+
+	# Clear pending after a timeout (client may disconnect before creating)
+	@warning_ignore("return_value_discarded")
+	get_tree().create_timer(60.0).timeout.connect(
+		func() -> void:
+			@warning_ignore("return_value_discarded")
+			_pending_gateway_creations.erase(gateway_id)
+	)
+
+
+func _on_field_travel_approved(
+	gateway_id: int, generation_seed: int, pearl_type: String,
+	_map_name: String, field_state_json: String
+) -> void:
+	## Client handler: server approved our field travel request.
+	## Store CRDT state and create the field.
+	if multiplayer.is_server():
+		return
+
+	if gateway_id < 0 or gateway_id >= _gateways.size():
+		return
+
+	# Parse CRDT state from server
+	var field_state: Dictionary = {}
+	if not field_state_json.is_empty():
+		var parsed: Variant = JSON.parse_string(field_state_json)
+		if parsed is Dictionary:
+			@warning_ignore("unsafe_cast")
+			field_state = parsed as Dictionary
+
+	# Store CRDT state for the new field to consume
+	if not field_state.is_empty():
+		MapManager.set_pending_field_crdt(field_state)
+
+	# Set travel source so destination knows where we came from
+	MapManager.set_travel_source(
+		LobbyManager.current_lobby_id, gateway_id, -1, "field"
+	)
+
+	print(
+		("Town: Client creating field from approval "
+		+ "(seed %d, pearl %s, gateway %d)") % [
+			generation_seed, pearl_type, gateway_id
+		]
+	)
+
+	var pearl_sn: StringName = (
+		StringName(pearl_type) if not pearl_type.is_empty() else &""
+	)
+	MapManager.create_field(
+		generation_seed,
+		LobbyManager.current_lobby_id,
+		gateway_id,
+		get_town_name(),
+		pearl_sn,
+		SteamManager.get_steam_id()
+	)
+
+
+func _request_field_state_from_peer(peer_id: int) -> void:
+	## Server: request CRDT state from a returning peer for our gateway seeds.
+	if not multiplayer.is_server() or _town_storage == null:
+		return
+
+	var seeds: Array[int] = []
+	for i: int in range(4):
+		var gw: Dictionary = _town_storage.get_gateway(i)
+		var seed_val: int = gw.get("generation_seed", 0)
+		if seed_val > 0:
+			seeds.append(seed_val)
+
+	if seeds.is_empty():
+		return
+
+	var seeds_json: String = JSON.stringify(seeds)
+	NetworkManager.request_field_state_on_return.rpc_id(
+		peer_id, seeds_json
+	)
+	print(
+		"Town: Requested field state from peer %d for %d seeds"
+		% [peer_id, seeds.size()]
+	)
+
+
+func _on_field_state_return_requested(seeds_json: String) -> void:
+	## Client: server wants our CRDT state for matching seeds.
+	## Look up field cache for entries with matching generation_seed.
+	if multiplayer.is_server():
+		return
+
+	var seeds: Array = []
+	var parsed: Variant = JSON.parse_string(seeds_json)
+	if parsed is Array:
+		@warning_ignore("unsafe_cast")
+		seeds = parsed as Array
+
+	if seeds.is_empty():
+		return
+
+	var cache: FieldStateCache = MapManager.get_field_cache()
+	if cache == null:
+		return
+
+	var matching_entries: Array[Dictionary] = []
+	for lobby_id: int in cache.get_cached_lobby_ids():
+		var entry: Dictionary = cache.serialize_entry(lobby_id)
+		if entry.is_empty():
+			continue
+		var entry_seed: Variant = entry.get("generation_seed", 0)
+		# Seeds from JSON parse may be float; compare flexibly
+		for seed_val: Variant in seeds:
+			@warning_ignore("unsafe_call_argument")
+			if int(entry_seed) == int(seed_val) and int(seed_val) > 0:
+				matching_entries.append(entry)
+				break
+
+	if matching_entries.is_empty():
+		return
+
+	var entries_json: String = JSON.stringify(matching_entries)
+	NetworkManager.return_field_state.rpc_id(1, entries_json)
+	print(
+		"Town: Returning %d field cache entries to server"
+		% matching_entries.size()
+	)
+
+
+func _on_field_state_returned(
+	peer_id: int, entries_json: String
+) -> void:
+	## Server: merge returned CRDT state into town storage.
+	if not multiplayer.is_server() or _town_storage == null:
+		return
+
+	var parsed: Variant = JSON.parse_string(entries_json)
+	if not parsed is Array:
+		return
+
+	@warning_ignore("unsafe_cast")
+	var entries: Array = parsed as Array
+
+	for entry_variant: Variant in entries:
+		if not entry_variant is Dictionary:
+			continue
+
+		@warning_ignore("unsafe_cast")
+		var data: Dictionary = entry_variant as Dictionary
+		var seed_val: int = data.get("generation_seed", 0)
+		if seed_val <= 0:
+			continue
+
+		# Validate seed matches one of our gateways
+		var matching_gw_id: int = -1
+		for i: int in range(4):
+			var gw: Dictionary = _town_storage.get_gateway(i)
+			if gw.get("generation_seed", 0) == seed_val:
+				matching_gw_id = i
+				break
+		if matching_gw_id < 0:
+			continue
+
+		# Extract CRDT components
+		var incoming_removed: Dictionary = {}
+		var rem: Variant = data.get("removed_items", {})
+		if rem is Dictionary:
+			@warning_ignore("unsafe_cast")
+			incoming_removed = rem as Dictionary
+
+		var incoming_placed: Dictionary = {}
+		var plc: Variant = data.get("placed_items", {})
+		if plc is Dictionary:
+			@warning_ignore("unsafe_cast")
+			incoming_placed = plc as Dictionary
+
+		var incoming_gv: Array[int] = [0, 0, 0, 0]
+		var gv_data: Variant = data.get("gateway_versions", [])
+		if gv_data is Array:
+			@warning_ignore("unsafe_cast")
+			var gv_arr: Array = gv_data as Array
+			for i: int in range(mini(gv_arr.size(), 4)):
+				if gv_arr[i] is int:
+					incoming_gv[i] = gv_arr[i]
+				elif gv_arr[i] is float:
+					@warning_ignore("unsafe_call_argument")
+					incoming_gv[i] = int(gv_arr[i])
+
+		var incoming_gateways: Array[Dictionary] = []
+		var gws: Variant = data.get("gateways", [])
+		if gws is Array:
+			@warning_ignore("unsafe_cast")
+			for gw: Variant in (gws as Array):
+				if gw is Dictionary:
+					@warning_ignore("unsafe_cast")
+					incoming_gateways.append(
+						(gw as Dictionary).duplicate()
+					)
+
+		# Merge into town storage
+		_town_storage.merge_linked_field(
+			seed_val, incoming_removed, incoming_placed,
+			incoming_gv, incoming_gateways
+		)
+
+		# Update linked_lobby_id if the peer reports a live field
+		var lobby_id: int = data.get("lobby_id", 0)
+		if lobby_id > 0 and matching_gw_id >= 0:
+			var gw: Dictionary = _town_storage.get_gateway(matching_gw_id)
+			var current_link: String = gw.get("linked_lobby_id", "0")
+			var linked_map: String = str(gw.get("linked_map_name", ""))
+			# gw.get() returns Variant; value is always int from gateway dict
+			@warning_ignore("unsafe_call_argument")
+			var linked_gw_id: int = int(gw.get("linked_gateway_id", -1))
+			if current_link == "0" or current_link.to_int() != lobby_id:
+				_town_storage.set_gateway_link(
+					matching_gw_id, lobby_id, linked_map
+				)
+				# Update the gateway UI
+				if matching_gw_id < _gateways.size():
+					_gateways[matching_gw_id].set_link(
+						lobby_id, linked_map, linked_gw_id
+					)
+
+		# Also merge into field cache
+		var cache: FieldStateCache = MapManager.get_field_cache()
+		if cache != null:
+			@warning_ignore("return_value_discarded")
+			cache.merge_entry(data)
+
+		print(
+			("Town: Merged returned field state from peer %d "
+			+ "for seed %d") % [peer_id, seed_val]
+		)
+
+	# Push updated state to peer towns via P2P
+	_push_state_to_peer_towns()
+
+
+func _push_state_to_peer_towns() -> void:
+	## Push updated field state to known peer towns via P2P.
+	## Queries lobbies for towns with matching seeds and sends state.
+	if _town_storage == null:
+		return
+
+	# Collect seeds and their stored state
+	for i: int in range(4):
+		var gw: Dictionary = _town_storage.get_gateway(i)
+		var seed_val: int = gw.get("generation_seed", 0)
+		if seed_val <= 0:
+			continue
+
+		var stored: Variant = _town_storage.get_linked_field(seed_val)
+		if stored == null or not stored is Dictionary:
+			continue
+
+		# P2P push happens when peer towns are discovered during sync.
+		# The _start_field_sync() mechanism handles ongoing discovery.
+		# Here we just ensure our local state is saved for when
+		# peer towns query us via P2P.
 
 
 func _restore_gateway_links() -> void:

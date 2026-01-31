@@ -32,8 +32,12 @@ var _pearl_type: StringName = &""
 ## Steam ID of the town owner that created this field (stable identifier)
 var _origin_owner_steam_id: int = 0
 
-## Current state version for version sync (incremented on each state change)
-var _current_state_version: int = 0
+## CRDT grow-only set of removed item instance IDs
+var _current_removed_items: Dictionary = {}
+## CRDT grow-only set of player-placed items
+var _current_placed_items: Dictionary = {}
+## Per-gateway version counters
+var _current_gateway_versions: Array[int] = [0, 0, 0, 0]
 
 ## Peer ID we requested field state from (0 = none pending)
 var _pending_state_request_peer: int = 0
@@ -73,15 +77,14 @@ func _ready() -> void:
 		if multiplayer.is_server():
 			_spawn_all_connected_players()
 			if is_restoring:
-				# Priority 1: Restore from session cache (multiplayer scenario)
-				_restore_cached_state()
-			elif _load_from_town_cloud():
-				# Priority 2: Restore from town's Steam Cloud (game restart scenario)
-				# _load_from_town_cloud() already spawned items and configured gateways
-				print("Field: Restored state from town cloud storage")
-			else:
-				# Priority 3: Generate fresh items (first-time creation)
-				_generate_field_items()
+				# Priority 1: Restore CRDT sets from session cache
+				_load_crdt_from_cache()
+			elif not _load_crdt_from_town_cloud():
+				if not _load_crdt_from_pending():
+					# Priority 3/4: Pending (from travel approval) or fresh
+					print("Field: Starting with empty CRDT state")
+			# Reconstruct world items from CRDT sets + seed
+			_reconstruct_items_from_crdt()
 			# Restore field→town links from town cloud gateway data.
 			# Town gateways store which field gateway they link to; this creates
 			# the reverse links on unconfigured field gateways.
@@ -120,13 +123,9 @@ func _connect_field_signals() -> void:
 		@warning_ignore("return_value_discarded")
 		NetworkManager.gateway_config_rejected.connect(_on_gateway_config_rejected)
 
-	# Version exchange signals for state versioning
+	# CRDT exchange for in-field state convergence
 	@warning_ignore("return_value_discarded")
-	NetworkManager.field_version_received.connect(_on_field_version_received)
-	@warning_ignore("return_value_discarded")
-	NetworkManager.field_state_requested.connect(_on_field_state_requested)
-	@warning_ignore("return_value_discarded")
-	NetworkManager.field_state_received.connect(_on_field_state_received)
+	NetworkManager.field_crdt_received.connect(_on_field_crdt_received)
 
 
 func _read_field_metadata() -> void:
@@ -195,23 +194,66 @@ func _generate_field_visuals() -> void:
 
 
 func _generate_field_items() -> void:
-	## Server-only: Spawn items based on procedural generation.
+	## Server-only: Spawn items from seed, respecting CRDT removed_items.
 	if not multiplayer.is_server():
 		return
 
-	if _field_generator == null:
-		_field_generator = ProceduralFieldGenerator.new(_generation_seed, _pearl_type)
+	_reconstruct_items_from_crdt()
 
-	# Spawn items (networked via MultiplayerSpawner)
+
+func _reconstruct_items_from_crdt() -> void:
+	## Rebuild world items from seed + CRDT sets.
+	## 1. Generate canonical items, assign deterministic instance IDs
+	## 2. Skip items in _current_removed_items
+	## 3. Spawn placed_items (skip if also removed)
+	if _field_generator == null:
+		_field_generator = ProceduralFieldGenerator.new(
+			_generation_seed, _pearl_type
+		)
+
+	# Spawn generated items (skip removed)
 	var items: Array[Dictionary] = _field_generator.generate_items()
-	for item_data: Dictionary in items:
+	var spawned_count: int = 0
+	for i: int in range(items.size()):
+		var item_data: Dictionary = items[i]
+		var iid: String = "gen_%d_%d" % [_generation_seed, i]
+
+		if _current_removed_items.has(iid):
+			continue  # Item was picked up
+
 		var item_id: StringName = item_data.get("item_id", &"")
 		var pos: Vector3 = item_data.get("position", Vector3.ZERO)
 		var quantity: int = item_data.get("quantity", 1)
 		if item_id != &"":
-			_spawn_item_at(item_id, pos, quantity)
+			_spawn_item_at(item_id, pos, quantity, iid)
+			spawned_count += 1
 
-	print("Field: Spawned %d items" % items.size())
+	# Spawn placed items (skip if also removed)
+	var placed_count: int = 0
+	for iid: String in _current_placed_items:
+		if _current_removed_items.has(iid):
+			continue  # Placed then picked up again
+
+		var entry: Dictionary = _current_placed_items[iid]
+		var item_id_str: String = entry.get("item_id", "")
+		var item_id: StringName = (
+			StringName(item_id_str) if not item_id_str.is_empty() else &""
+		)
+		var pos: Vector3 = FieldCloudPersistence.parse_position(
+			entry.get("position", null)
+		)
+		var quantity: int = entry.get("quantity", 1)
+		if item_id != &"":
+			_spawn_item_at(item_id, pos, quantity, iid)
+			placed_count += 1
+
+	print(
+		("Field: Reconstructed from CRDT - %d generated, %d placed, "
+		+ "%d removed") % [
+			spawned_count, placed_count,
+			_current_removed_items.size()
+		]
+	)
 
 
 func _apply_ground_color() -> void:
@@ -278,17 +320,8 @@ func _on_peer_connected(peer_id: int) -> void:
 		_sync_all_gateways_to_peer(peer_id)
 		# Sync field cache to the new peer
 		_sync_field_cache_to_peer(peer_id)
-		# Send our state version to the peer for version comparison
-		NetworkManager.send_field_version_to_peer(
-			peer_id, _generation_seed, _current_state_version,
-			SteamManager.get_steam_id()
-		)
-	else:
-		# Client: Send our version to the server when we connect
-		NetworkManager.broadcast_field_version(
-			_generation_seed, _current_state_version,
-			SteamManager.get_steam_id()
-		)
+		# Send CRDT state to the new peer for bidirectional merge
+		_send_crdt_to_peer(peer_id)
 
 
 func _on_peer_disconnected(peer_id: int) -> void:
@@ -326,12 +359,8 @@ func _disconnect_field_signals() -> void:
 		NetworkManager.gateway_config_confirmed.disconnect(_on_gateway_config_confirmed)
 	if NetworkManager.gateway_config_rejected.is_connected(_on_gateway_config_rejected):
 		NetworkManager.gateway_config_rejected.disconnect(_on_gateway_config_rejected)
-	if NetworkManager.field_version_received.is_connected(_on_field_version_received):
-		NetworkManager.field_version_received.disconnect(_on_field_version_received)
-	if NetworkManager.field_state_requested.is_connected(_on_field_state_requested):
-		NetworkManager.field_state_requested.disconnect(_on_field_state_requested)
-	if NetworkManager.field_state_received.is_connected(_on_field_state_received):
-		NetworkManager.field_state_received.disconnect(_on_field_state_received)
+	if NetworkManager.field_crdt_received.is_connected(_on_field_crdt_received):
+		NetworkManager.field_crdt_received.disconnect(_on_field_crdt_received)
 
 
 # =============================================================================
@@ -821,139 +850,117 @@ func _on_field_cache_received(entries: Array, _remappings: Dictionary) -> void:
 	print("Field: Merged field cache from server")
 
 
-func _on_field_version_received(
-	peer_id: int, generation_seed: int, version: int,
-	modifier_steam_id: int
-) -> void:
-	## Handle version info received from a peer.
-	## If their version is newer, request their full state.
-	## On equal versions, higher modifier Steam ID wins (deterministic tiebreaker).
-	if generation_seed != _generation_seed:
-		return  # Not about this field
-
-	print("Field: Received v%d from peer %d (our v%d)" % [
-		version, peer_id, _current_state_version
-	])
-
-	var dominated: bool = false
-	if version > _current_state_version:
-		dominated = true
-	elif version == _current_state_version and version > 0:
-		# Tiebreaker: higher Steam ID wins
-		if modifier_steam_id > SteamManager.get_steam_id():
-			dominated = true
-			print("Field: Equal version %d, peer wins tiebreak (%d > %d)" % [
-				version, modifier_steam_id, SteamManager.get_steam_id()
-			])
-
-	if dominated:
-		print("Field: Peer %d has authoritative version, requesting state..." % peer_id)
-		_pending_state_request_peer = peer_id
-		NetworkManager.request_field_state.rpc_id(peer_id, generation_seed)
-
-
-func _on_field_state_requested(peer_id: int, generation_seed: int) -> void:
-	## Handle request for our field state from a peer who has older version.
-	if generation_seed != _generation_seed:
-		return  # Not about this field
-
-	print("Field: Peer %d requested our state (version %d)" % [peer_id, _current_state_version])
-
-	# Serialize and send our current state
-	var spawn_target: Node = _item_spawner.get_node(_item_spawner.spawn_path)
-	var items: Array[Dictionary] = _cloud_persistence.serialize_items(spawn_target)
-	var gateways: Array[Dictionary] = _cloud_persistence.serialize_gateways(_gateways)
-
-	var state_data: Dictionary = {
-		"generation_seed": _generation_seed,
-		"state_version": _current_state_version,
-		"last_modified_by": SteamManager.get_steam_id(),
-		"origin_lobby_id": _origin_lobby_id,
-		"origin_gateway": _origin_gateway,
-		"origin_map_name": _origin_map_name,
-		"pearl_type": String(_pearl_type),
-		"items": items,
-		"gateways": gateways
-	}
-
-	var state_json: String = JSON.stringify(state_data)
-	NetworkManager.send_field_state_to_peer(peer_id, generation_seed, state_json)
-
-
-func _on_field_state_received(
-	sender_id: int, generation_seed: int, state_json: String
-) -> void:
-	## Handle full field state received from a peer with newer version.
-	if generation_seed != _generation_seed:
-		return  # Not about this field
-
-	# Reject state from unexpected peers
-	if _pending_state_request_peer != 0 and sender_id != _pending_state_request_peer:
-		push_warning("Field: Rejected state from peer %d (expected %d)" % [
-			sender_id, _pending_state_request_peer
-		])
+func _send_crdt_to_peer(peer_id: int) -> void:
+	## Send current CRDT state to a specific peer for bidirectional exchange.
+	if _generation_seed <= 0:
 		return
+
+	var state: Dictionary = {
+		"removed_items": _current_removed_items,
+		"placed_items": _current_placed_items,
+		"gateway_versions": _current_gateway_versions
+	}
+	var state_json: String = JSON.stringify(state)
+	NetworkManager.send_field_crdt_to_peer(
+		peer_id, _generation_seed, state_json
+	)
+
+
+func _on_field_crdt_received(
+	peer_id: int, generation_seed: int, state_json: String
+) -> void:
+	## Handle incoming CRDT state from a peer.
+	## Server: merges and reconciles world items.
+	## Client: sends own state back to server for bidirectional exchange.
+	if generation_seed != _generation_seed:
+		return  # Not for this field
 
 	var parsed: Variant = JSON.parse_string(state_json)
 	if not parsed is Dictionary:
-		push_warning("Field: Failed to parse received field state")
 		return
 
 	@warning_ignore("unsafe_cast")
-	var state_data: Dictionary = parsed as Dictionary
-	var received_version: int = state_data.get("state_version", 0)
-	var remote_modifier: int = state_data.get("last_modified_by", 0)
+	var incoming: Dictionary = parsed as Dictionary
+	var incoming_removed: Dictionary = {}
+	var incoming_placed: Dictionary = {}
 
-	if received_version < _current_state_version:
-		print("Field: Ignoring older state v%d (our: v%d)" % [
-			received_version, _current_state_version
-		])
+	var rem_variant: Variant = incoming.get("removed_items", {})
+	if rem_variant is Dictionary:
+		@warning_ignore("unsafe_cast")
+		incoming_removed = rem_variant as Dictionary
+
+	var placed_variant: Variant = incoming.get("placed_items", {})
+	if placed_variant is Dictionary:
+		@warning_ignore("unsafe_cast")
+		incoming_placed = placed_variant as Dictionary
+
+	if multiplayer.is_server():
+		# Server: merge incoming state and reconcile world items
+		var new_removed: Dictionary = {}
+		var new_placed: Dictionary = {}
+
+		# Find new removals (in incoming but not in local)
+		for iid: String in incoming_removed:
+			if not _current_removed_items.has(iid):
+				_current_removed_items[iid] = incoming_removed[iid]
+				new_removed[iid] = incoming_removed[iid]
+
+		# Find new placements (in incoming but not in local)
+		for iid: String in incoming_placed:
+			if not _current_placed_items.has(iid):
+				_current_placed_items[iid] = incoming_placed[iid]
+				new_placed[iid] = incoming_placed[iid]
+
+		# Reconcile world items if anything changed
+		if not new_removed.is_empty() or not new_placed.is_empty():
+			_reconcile_world_items(new_removed, new_placed)
+			print(
+				("Field: Merged CRDT from peer %d "
+				+ "(+%d removed, +%d placed)") % [
+					peer_id, new_removed.size(), new_placed.size()
+				]
+			)
+	else:
+		# Client: send our state back to server for bidirectional merge
+		_send_crdt_to_peer(1)
+
+
+func _reconcile_world_items(
+	new_removed: Dictionary, new_placed: Dictionary
+) -> void:
+	## Reconcile world items after CRDT merge.
+	## Removes items newly in removed set, spawns items newly in placed set.
+	if not multiplayer.is_server():
 		return
 
-	if received_version == _current_state_version:
-		# Tiebreaker: higher Steam ID wins
-		if remote_modifier <= SteamManager.get_steam_id():
-			print("Field: Ignoring equal v%d state, we win tiebreak" % [
-				received_version
-			])
-			return
+	# Remove world items that are newly in the removed set
+	var spawn_target: Node = _item_spawner.get_node(
+		_item_spawner.spawn_path
+	)
+	if spawn_target != null:
+		for child: Node in spawn_target.get_children():
+			if child is WorldItem:
+				@warning_ignore("unsafe_cast")
+				var wi: WorldItem = child as WorldItem
+				if (
+					not wi.instance_id.is_empty()
+					and new_removed.has(wi.instance_id)
+				):
+					wi.queue_free()
 
-	print("Field: Adopting newer state version %d from peer %d (was %d)" % [
-		received_version, sender_id, _current_state_version
-	])
-
-	# Update our version and clear pending request
-	_current_state_version = received_version
-	_pending_state_request_peer = 0
-
-	# Only server can actually update world state (spawn/despawn items)
-	if multiplayer.is_server():
-		# Clear existing items and respawn from received state
-		_clear_all_items()
-
-		var items_data: Variant = state_data.get("items", [])
-		if items_data is Array:
-			@warning_ignore("unsafe_cast")
-			for item_data: Variant in (items_data as Array):
-				if item_data is Dictionary:
-					@warning_ignore("unsafe_cast")
-					var item_dict: Dictionary = item_data as Dictionary
-					var item_id_str: Variant = item_dict.get("item_id", "")
-					var item_id: StringName = StringName(str(item_id_str))
-					var pos: Vector3 = FieldCloudPersistence.parse_position(
-						item_dict.get("position", null)
-					)
-					var quantity: int = item_dict.get("quantity", 1)
-					if item_id != &"":
-						_spawn_item_at(item_id, pos, quantity)
-
-		# Update gateway configurations
-		var gateways_data: Variant = state_data.get("gateways", [])
-		if gateways_data is Array:
-			@warning_ignore("unsafe_cast")
-			_apply_gateway_state(gateways_data as Array)
-
-		print("Field: Applied newer state from peer")
+	# Spawn newly placed items (skip if also removed)
+	for iid: String in new_placed:
+		if _current_removed_items.has(iid):
+			continue
+		var entry: Dictionary = new_placed[iid]
+		var item_id_str: String = entry.get("item_id", "")
+		if item_id_str.is_empty():
+			continue
+		var pos: Vector3 = FieldCloudPersistence.parse_position(
+			entry.get("position", null)
+		)
+		var quantity: int = entry.get("quantity", 1)
+		_spawn_item_at(StringName(item_id_str), pos, quantity, iid)
 
 
 func _clear_all_items() -> void:
@@ -1061,72 +1068,108 @@ func _clear_stale_gateway_link(gateway: Gateway) -> void:
 # =============================================================================
 
 func _cache_field_state() -> void:
-	## Serialize and cache the current field state before leaving.
+	## Cache the current CRDT field state before leaving.
 	if not multiplayer.is_server():
 		return
 
-	var spawn_target: Node = _item_spawner.get_node(_item_spawner.spawn_path)
-	var items: Array[Dictionary] = _cloud_persistence.serialize_items(spawn_target)
-	var gateways: Array[Dictionary] = _cloud_persistence.serialize_gateways(_gateways)
-
-	# Increment state version
-	_current_state_version += 1
-
-	# Get modifier Steam ID (local player's Steam ID)
+	var gateways: Array[Dictionary] = _cloud_persistence.serialize_gateways(
+		_gateways
+	)
 	var modifier_steam_id: int = SteamManager.get_steam_id()
 
-	# Save to session cache (for multiplayer) - with version tracking
-	MapManager.cache_current_field(items, gateways, modifier_steam_id)
-	print("Field: Cached state v%d (%d items, %d gateways)" % [
-		_current_state_version, items.size(), gateways.size()
-	])
+	# Save CRDT sets to session cache (for multiplayer)
+	MapManager.cache_current_field(
+		_current_removed_items, _current_placed_items,
+		_current_gateway_versions, gateways, modifier_steam_id
+	)
+	print(
+		"Field: Cached CRDT state (%d removed, %d placed, %d gateways)"
+		% [
+			_current_removed_items.size(),
+			_current_placed_items.size(), gateways.size()
+		]
+	)
 
 	# Also save to town's Steam Cloud if this is player's own linked field
-	# This persists the state across game restarts
 	if _is_own_field():
 		@warning_ignore("return_value_discarded")
 		_cloud_persistence.save_to_town_cloud(
-			_generation_seed, _pearl_type, items, gateways
+			_generation_seed, _pearl_type, _current_removed_items,
+			_current_placed_items, _current_gateway_versions, gateways
 		)
 
 	# Broadcast updated cache to all connected clients before leaving
-	# This ensures other players can restore fields if they become host later
 	_broadcast_field_cache()
 
 
-func _load_from_town_cloud() -> bool:
-	## Try to load field state from the player's town Steam Cloud storage.
-	## Returns true if state was loaded and applied, false otherwise.
+func _load_crdt_from_cache() -> void:
+	## Load CRDT sets from session cache (restoring a previously visited field).
+	var state: FieldStateCache.FieldState = (
+		MapManager.get_pending_field_restoration()
+	)
+	if state == null:
+		return
+
+	_current_removed_items = state.removed_items.duplicate(true)
+	_current_placed_items = state.placed_items.duplicate(true)
+	_current_gateway_versions = state.gateway_versions.duplicate()
+
+	# Restore gateway configurations
+	for gateway_data: Dictionary in state.gateways:
+		_apply_single_gateway_from_data(gateway_data)
+
+	print(
+		"Field: Loaded CRDT from cache (%d removed, %d placed)" % [
+			_current_removed_items.size(),
+			_current_placed_items.size()
+		]
+	)
+
+	# Clear the restoration state
+	MapManager.clear_field_restoration()
+
+
+func _load_crdt_from_town_cloud() -> bool:
+	## Load CRDT sets from town cloud storage.
+	## Returns true if data was loaded, false otherwise.
 	if not _is_own_field():
 		return false
 
-	var field_dict: Variant = _cloud_persistence.load_from_town_cloud(_generation_seed)
+	var field_dict: Variant = _cloud_persistence.load_from_town_cloud(
+		_generation_seed
+	)
 	if field_dict == null:
 		return false
 
 	@warning_ignore("unsafe_cast")
 	var data: Dictionary = field_dict as Dictionary
 
-	print("Field: Loading state from town cloud (seed %d)..." % _generation_seed)
+	print(
+		"Field: Loading CRDT from town cloud (seed %d)..."
+		% _generation_seed
+	)
 
-	# Restore items
-	var items_variant: Variant = data.get("items", [])
-	if items_variant is Array:
+	# Load CRDT sets
+	var removed: Variant = data.get("removed_items", {})
+	if removed is Dictionary:
 		@warning_ignore("unsafe_cast")
-		var items: Array = items_variant as Array
-		for item_data: Variant in items:
-			if item_data is Dictionary:
-				@warning_ignore("unsafe_cast")
-				var item_dict: Dictionary = item_data as Dictionary
-				var item_id_str: Variant = item_dict.get("item_id", "")
-				var item_id: StringName = StringName(str(item_id_str))
-				var pos: Vector3 = FieldCloudPersistence.parse_position(
-					item_dict.get("position", null)
-				)
-				var quantity: int = item_dict.get("quantity", 1)
-				if item_id != &"":
-					_spawn_item_at(item_id, pos, quantity)
-		print("Field: Restored %d items from town cloud" % items.size())
+		_current_removed_items = (removed as Dictionary).duplicate(true)
+
+	var placed: Variant = data.get("placed_items", {})
+	if placed is Dictionary:
+		@warning_ignore("unsafe_cast")
+		_current_placed_items = (placed as Dictionary).duplicate(true)
+
+	var gv: Variant = data.get("gateway_versions", [0, 0, 0, 0])
+	if gv is Array:
+		@warning_ignore("unsafe_cast")
+		var gv_arr: Array = gv as Array
+		for i: int in range(mini(gv_arr.size(), 4)):
+			if gv_arr[i] is int:
+				_current_gateway_versions[i] = gv_arr[i]
+			elif gv_arr[i] is float:
+				@warning_ignore("unsafe_call_argument")
+				_current_gateway_versions[i] = int(gv_arr[i])
 
 	# Restore gateway configurations
 	var gateways_variant: Variant = data.get("gateways", [])
@@ -1134,8 +1177,59 @@ func _load_from_town_cloud() -> bool:
 		@warning_ignore("unsafe_cast")
 		var gateways_data: Array = gateways_variant as Array
 		_apply_gateway_configs_from_cloud(gateways_data)
-		print("Field: Restored gateway configurations from town cloud")
+		print("Field: Restored gateways from town cloud")
 
+	print(
+		"Field: Loaded CRDT from town cloud (%d removed, %d placed)"
+		% [_current_removed_items.size(), _current_placed_items.size()]
+	)
+	return true
+
+
+func _load_crdt_from_pending() -> bool:
+	## Load CRDT sets from pending travel approval state.
+	## Used when a client creates a field after receiving host approval.
+	var data: Dictionary = MapManager.consume_pending_field_crdt()
+	if data.is_empty():
+		return false
+
+	print("Field: Loading CRDT from pending travel approval...")
+
+	var removed: Variant = data.get("removed_items", {})
+	if removed is Dictionary:
+		@warning_ignore("unsafe_cast")
+		_current_removed_items = (removed as Dictionary).duplicate(true)
+
+	var placed: Variant = data.get("placed_items", {})
+	if placed is Dictionary:
+		@warning_ignore("unsafe_cast")
+		_current_placed_items = (placed as Dictionary).duplicate(true)
+
+	var gv: Variant = data.get("gateway_versions", [0, 0, 0, 0])
+	if gv is Array:
+		@warning_ignore("unsafe_cast")
+		var gv_arr: Array = gv as Array
+		for i: int in range(mini(gv_arr.size(), 4)):
+			if gv_arr[i] is int:
+				_current_gateway_versions[i] = gv_arr[i]
+			elif gv_arr[i] is float:
+				@warning_ignore("unsafe_call_argument")
+				_current_gateway_versions[i] = int(gv_arr[i])
+
+	# Restore gateway configurations if present
+	var gateways_variant: Variant = data.get("gateways", [])
+	if gateways_variant is Array:
+		@warning_ignore("unsafe_cast")
+		var gateways_data: Array = gateways_variant as Array
+		for gw_entry: Variant in gateways_data:
+			if gw_entry is Dictionary:
+				@warning_ignore("unsafe_cast")
+				_apply_single_gateway_from_data(gw_entry as Dictionary)
+
+	print(
+		"Field: Loaded CRDT from pending (%d removed, %d placed)"
+		% [_current_removed_items.size(), _current_placed_items.size()]
+	)
 	return true
 
 
@@ -1205,72 +1299,85 @@ func _apply_gateway_configs_from_cloud(gateways_data: Array) -> void:
 			gateway.set_config(gen_seed, linked_name, pearl)
 
 
-func _restore_cached_state() -> void:
-	## Restore field state from cache if available.
-	var state: FieldStateCache.FieldState = MapManager.get_pending_field_restoration()
-	if state == null:
+func _apply_single_gateway_from_data(gateway_data: Dictionary) -> void:
+	## Apply a single gateway configuration from serialized data.
+	var gw_id: int = gateway_data.get("id", -1)
+	if gw_id < 0 or gw_id >= _gateways.size():
 		return
 
-	print("Field: Restoring cached state...")
+	var gateway: Gateway = _gateways[gw_id]
+	var is_origin: bool = gateway_data.get("is_origin_gateway", false)
+	if is_origin or gateway.is_origin_gateway:
+		return
 
-	# Restore items (server only)
+	var linked_id: int = gateway_data.get("linked_lobby_id", 0)
+	var linked_name: String = gateway_data.get("linked_map_name", "")
+	var gen_seed: int = gateway_data.get("generation_seed", 0)
+	var pearl_str: String = gateway_data.get("pearl_type", "")
+	var pearl: StringName = (
+		StringName(pearl_str) if not pearl_str.is_empty() else &""
+	)
+	var linked_gw_id: int = gateway_data.get("linked_gateway_id", -1)
+	var link_type_str: String = gateway_data.get("link_type", "none")
+	var owner_steam_id: int = FieldCloudPersistence.parse_steam_id(
+		gateway_data.get("linked_owner_steam_id", 0)
+	)
+
+	if link_type_str == "town" and owner_steam_id > 0:
+		var current_id: int = linked_id
+		if owner_steam_id == SteamManager.get_steam_id():
+			var current_town_id: int = MapManager.get_own_town_lobby_id()
+			if current_town_id > 0:
+				current_id = current_town_id
+		gateway.set_town_link(
+			owner_steam_id, current_id, linked_name, linked_gw_id
+		)
+	elif link_type_str == "field" and (linked_id > 0 or gen_seed > 0):
+		if linked_id > 0:
+			gateway.set_link(linked_id, linked_name, linked_gw_id)
+			gateway.pearl_type = pearl
+		else:
+			gateway.set_config(gen_seed, linked_name, pearl)
+	elif linked_id > 0:
+		gateway.set_link(linked_id, linked_name, linked_gw_id)
+		gateway.pearl_type = pearl
+	elif gen_seed > 0:
+		gateway.set_config(gen_seed, linked_name, pearl)
+
+
+func _get_field_host_steam_id() -> int:
+	## Get the Steam ID of the current field host.
 	if multiplayer.is_server():
-		for item_data: Dictionary in state.items:
-			var item_id_str: Variant = item_data.get("item_id", "")
-			var item_id: StringName = StringName(str(item_id_str))
-			var pos: Vector3 = FieldCloudPersistence.parse_position(
-				item_data.get("position", null)
-			)
-			var quantity: int = item_data.get("quantity", 1)
-			if item_id != &"":
-				_spawn_item_at(item_id, pos, quantity)
-		print("Field: Restored %d items" % state.items.size())
+		return SteamManager.get_steam_id()
+	return _origin_owner_steam_id
 
-	# Restore gateway configurations
-	for gateway_data: Dictionary in state.gateways:
-		var gw_id: int = gateway_data.get("id", -1)
-		if gw_id >= 0 and gw_id < _gateways.size():
-			var gateway: Gateway = _gateways[gw_id]
-			var is_origin: bool = gateway_data.get("is_origin_gateway", false)
 
-			# Don't override origin gateway (it's set up in _spawn_gateways)
-			if not is_origin and not gateway.is_origin_gateway:
-				var linked_id: int = gateway_data.get("linked_lobby_id", 0)
-				var linked_name: String = gateway_data.get("linked_map_name", "")
-				var gen_seed: int = gateway_data.get("generation_seed", 0)
-				var pearl_str: String = gateway_data.get("pearl_type", "")
-				var pearl: StringName = StringName(pearl_str) if not pearl_str.is_empty() else &""
-				var linked_gw_id: int = gateway_data.get("linked_gateway_id", -1)
-				var link_type_str: String = gateway_data.get("link_type", "none")
-				var owner_steam_id: int = FieldCloudPersistence.parse_steam_id(
-					gateway_data.get("linked_owner_steam_id", 0)
-				)
+func _track_item_removal(world_item: WorldItem) -> void:
+	## Record item pickup in CRDT removed_items set.
+	if world_item.instance_id.is_empty():
+		return
+	_current_removed_items[world_item.instance_id] = {
+		"field_lobby_id": LobbyManager.current_lobby_id,
+		"field_host_steam_id": _get_field_host_steam_id(),
+		"timestamp": int(Time.get_unix_time_from_system())
+	}
 
-				if link_type_str == "town" and owner_steam_id > 0:
-					# Town link - use current town lobby ID if it's our own
-					var current_id: int = linked_id
-					if owner_steam_id == SteamManager.get_steam_id():
-						var current_town_id: int = MapManager.get_own_town_lobby_id()
-						if current_town_id > 0:
-							current_id = current_town_id
-					gateway.set_town_link(owner_steam_id, current_id, linked_name, linked_gw_id)
-				elif link_type_str == "field" and (linked_id > 0 or gen_seed > 0):
-					if linked_id > 0:
-						gateway.set_link(linked_id, linked_name, linked_gw_id)
-						gateway.pearl_type = pearl
-					else:
-						gateway.set_config(gen_seed, linked_name, pearl)
-				elif linked_id > 0:
-					# Legacy data without link_type
-					gateway.set_link(linked_id, linked_name, linked_gw_id)
-					gateway.pearl_type = pearl
-				elif gen_seed > 0:
-					gateway.set_config(gen_seed, linked_name, pearl)
 
-	print("Field: Restored gateway configurations")
-
-	# Clear the restoration state
-	MapManager.clear_field_restoration()
+func _track_item_placement(
+	item_id: StringName, pos: Vector3, quantity: int
+) -> String:
+	## Record item drop in CRDT placed_items set. Returns instance ID.
+	var iid: String = _generate_placed_id()
+	_current_placed_items[iid] = {
+		"instance_id": iid,
+		"item_id": str(item_id),
+		"position": {"x": pos.x, "y": pos.y, "z": pos.z},
+		"quantity": quantity,
+		"field_lobby_id": LobbyManager.current_lobby_id,
+		"field_host_steam_id": _get_field_host_steam_id(),
+		"timestamp": int(Time.get_unix_time_from_system())
+	}
+	return iid
 
 
 # =============================================================================

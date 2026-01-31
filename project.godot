@@ -27,6 +27,7 @@ LobbyManager="*res://autoload/lobby_manager.gd"
 NetworkManager="*res://autoload/network_manager.gd"
 InventoryManager="*res://autoload/inventory_manager.gd"
 MapManager="*res://autoload/map_manager.gd"
+P2PSyncManager="*res://autoload/p2p_sync_manager.gd"
 UIManager="*res://autoload/ui_manager.gd"
 
 [debug]

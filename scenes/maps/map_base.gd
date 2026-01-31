@@ -71,6 +71,8 @@ var _pending_travel_lobby_id: int = 0
 ## Tracks items currently being picked up (path -> true) to prevent duplicate
 ## pickups in the same frame. Entries are removed when the item leaves the tree.
 var _pending_pickups: Dictionary = {}
+## Counter for generating unique placed-item instance IDs within this session.
+var _placed_id_counter: int = 0
 
 
 # =============================================================================
@@ -115,6 +117,21 @@ func _get_arrival_gateway_id() -> int:
 func _update_status() -> void:
 	## Update the status label. Subclasses override for different formats.
 	pass
+
+
+func _track_item_removal(_world_item: WorldItem) -> void:
+	## Called before a picked-up item is freed.
+	## Subclasses override to record CRDT removal metadata.
+	pass
+
+
+func _track_item_placement(
+	_item_id: StringName, _pos: Vector3, _quantity: int
+) -> String:
+	## Called when a player drops an item.
+	## Subclasses override to record CRDT placement metadata.
+	## Returns an instance ID for the placed item ("" if not tracked).
+	return ""
 
 
 func _on_peer_connected(peer_id: int) -> void:
@@ -350,14 +367,28 @@ func _return_to_menu() -> void:
 # Item Spawning & Pickup
 # =============================================================================
 
-func _spawn_item_at(item_id: StringName, pos: Vector3, quantity: int = 1) -> void:
+func _generate_placed_id() -> String:
+	## Generate a unique instance ID for a player-placed item.
+	## Format: "placed_{steam_id}_{unix_time}_{counter}"
+	var steam_id: int = SteamManager.get_steam_id()
+	var ts: int = int(Time.get_unix_time_from_system())
+	var n: int = _placed_id_counter
+	_placed_id_counter += 1
+	return "placed_%d_%d_%d" % [steam_id, ts, n]
+
+
+func _spawn_item_at(
+	item_id: StringName, pos: Vector3, quantity: int = 1,
+	p_instance_id: String = ""
+) -> void:
 	if not multiplayer.is_server():
 		return
 
 	var spawn_data: Dictionary = {
 		"item_id": str(item_id),
 		"position": pos,
-		"quantity": quantity
+		"quantity": quantity,
+		"instance_id": p_instance_id
 	}
 	@warning_ignore("return_value_discarded")
 	_item_spawner.spawn(spawn_data)
@@ -372,6 +403,7 @@ func _spawn_world_item(data: Variant) -> Node:
 	var item_id: StringName = _get_spawn_item_id(spawn_data)
 	var pos: Vector3 = spawn_data.get("position", Vector3.ZERO)
 	var quantity: int = spawn_data.get("quantity", 1)
+	var iid: String = spawn_data.get("instance_id", "")
 
 	var item_data: ItemData = InventoryManager.get_item_data(item_id)
 	if item_data == null or item_data.world_scene == null:
@@ -390,6 +422,7 @@ func _spawn_world_item(data: Variant) -> Node:
 	world_item.item_id = item_id
 	world_item.quantity = quantity
 	world_item.position = pos
+	world_item.instance_id = iid
 
 	@warning_ignore("return_value_discarded")
 	world_item.picked_up.connect(_on_world_item_picked_up.bind(world_item))
@@ -452,6 +485,7 @@ func _process_pickup(peer_id: int, item_path: String) -> void:
 	var quantity: int = world_item.quantity
 
 	_pending_pickups[item_path] = true
+	_track_item_removal(world_item)
 	@warning_ignore("return_value_discarded")
 	world_item.tree_exiting.connect(_on_pickup_item_exiting.bind(item_path))
 	world_item.queue_free()
@@ -507,7 +541,8 @@ func _process_drop(peer_id: int, item_id_str: String, quantity: int) -> void:
 	drop_pos.y = 0.0
 
 	var item_id: StringName = StringName(item_id_str)
-	_spawn_item_at(item_id, drop_pos, quantity)
+	var iid: String = _track_item_placement(item_id, drop_pos, quantity)
+	_spawn_item_at(item_id, drop_pos, quantity, iid)
 	print("%s: Dropped %d %s at %s" % [
 		_get_map_type_name(), quantity, item_id, drop_pos
 	])

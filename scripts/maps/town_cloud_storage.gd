@@ -199,7 +199,8 @@ func clear_gateway_link(gateway_id: int) -> void:
 # Linked Field State API
 # =============================================================================
 
-## Get linked field state by generation seed (returns null if not found)
+## Get linked field CRDT state by generation seed (returns null if not found).
+## Auto-migrates old snapshot format to CRDT on first read.
 func get_linked_field(generation_seed: int) -> Variant:
 	var linked_fields_variant: Variant = _state.get("linked_fields", {})
 	if not linked_fields_variant is Dictionary:
@@ -207,12 +208,32 @@ func get_linked_field(generation_seed: int) -> Variant:
 	@warning_ignore("unsafe_cast")
 	var linked_fields: Dictionary = linked_fields_variant as Dictionary
 	var seed_key: String = str(generation_seed)
-	if linked_fields.has(seed_key):
-		var field_data: Variant = linked_fields[seed_key]
-		if field_data is Dictionary:
-			@warning_ignore("unsafe_cast", "unsafe_method_access")
-			return (field_data as Dictionary).duplicate(true)
-	return null
+	if not linked_fields.has(seed_key):
+		return null
+
+	var field_data: Variant = linked_fields[seed_key]
+	if not field_data is Dictionary:
+		return null
+
+	@warning_ignore("unsafe_cast")
+	var data: Dictionary = field_data as Dictionary
+
+	# Auto-migrate old snapshot format to CRDT
+	if not data.has("format_version"):
+		var pearl_str: String = data.get("pearl_type", "")
+		var pearl_type: StringName = (
+			StringName(pearl_str) if not pearl_str.is_empty() else &""
+		)
+		var migrated: Dictionary = (
+			FieldCloudPersistence.migrate_snapshot_to_crdt(
+				data, generation_seed, pearl_type
+			)
+		)
+		linked_fields[seed_key] = migrated
+		_queue_save()
+		return migrated.duplicate(true)
+
+	return data.duplicate(true)
 
 
 ## Check if a linked field exists by generation seed
@@ -225,12 +246,16 @@ func has_linked_field(generation_seed: int) -> bool:
 	return linked_fields.has(str(generation_seed))
 
 
-## Set linked field state by generation seed
-## state_version: Version counter for conflict resolution (newest wins)
-## last_modified_by: Steam ID of the player who last modified this state
-func set_linked_field(generation_seed: int, pearl_type: StringName,
-					  items: Array[Dictionary], gateways: Array[Dictionary],
-					  state_version: int = 0, last_modified_by: int = 0) -> void:
+## Set linked field CRDT state by generation seed
+func set_linked_field(
+	generation_seed: int,
+	pearl_type: StringName,
+	removed_items: Dictionary,
+	placed_items: Dictionary,
+	gateway_versions: Array[int],
+	gateways: Array[Dictionary],
+	last_modified_by: int = 0
+) -> void:
 	var linked_fields_variant: Variant = _state.get("linked_fields", {})
 	if not linked_fields_variant is Dictionary:
 		_state["linked_fields"] = {}
@@ -239,27 +264,121 @@ func set_linked_field(generation_seed: int, pearl_type: StringName,
 
 	var seed_key: String = str(generation_seed)
 
-	# If version not specified, increment existing or start at 1
-	var new_version: int = state_version
-	if new_version == 0:
-		var existing: Variant = linked_fields.get(seed_key, null)
-		if existing is Dictionary:
-			@warning_ignore("unsafe_cast")
-			new_version = (existing as Dictionary).get("state_version", 0) + 1
-		else:
-			new_version = 1
-
 	linked_fields[seed_key] = {
-		"state_version": new_version,
+		"format_version": 1,
 		"last_modified": Time.get_datetime_string_from_system(true),
 		"last_modified_by": last_modified_by,
 		"pearl_type": String(pearl_type),
-		"items": items.duplicate(true),
+		"removed_items": removed_items.duplicate(true),
+		"placed_items": placed_items.duplicate(true),
+		"gateway_versions": gateway_versions.duplicate(),
 		"gateways": gateways.duplicate(true)
 	}
-	print("TownCloudStorage: Saved linked field state for seed %d v%d (%d items, %d gateways)" % [
-		generation_seed, new_version, items.size(), gateways.size()
-	])
+	print(
+		("TownCloudStorage: Saved linked field CRDT for seed %d "
+		+ "(%d removed, %d placed, %d gateways)") % [
+			generation_seed, removed_items.size(),
+			placed_items.size(), gateways.size()
+		]
+	)
+	_queue_save()
+
+
+## Merge incoming CRDT state into stored linked field data using set union.
+## Creates the entry if it doesn't exist yet.
+func merge_linked_field(
+	generation_seed: int,
+	incoming_removed: Dictionary,
+	incoming_placed: Dictionary,
+	incoming_gw_versions: Array[int],
+	incoming_gateways: Array[Dictionary]
+) -> void:
+	var linked_fields_variant: Variant = _state.get("linked_fields", {})
+	if not linked_fields_variant is Dictionary:
+		_state["linked_fields"] = {}
+	@warning_ignore("unsafe_cast")
+	var linked_fields: Dictionary = _state["linked_fields"] as Dictionary
+	var seed_key: String = str(generation_seed)
+
+	if linked_fields.has(seed_key):
+		var existing: Variant = linked_fields[seed_key]
+		if existing is Dictionary:
+			@warning_ignore("unsafe_cast")
+			var data: Dictionary = existing as Dictionary
+			# Auto-migrate if needed
+			if not data.has("format_version"):
+				var pearl_str: String = data.get("pearl_type", "")
+				var pearl_type: StringName = (
+					StringName(pearl_str)
+					if not pearl_str.is_empty() else &""
+				)
+				data = FieldCloudPersistence.migrate_snapshot_to_crdt(
+					data, generation_seed, pearl_type
+				)
+				linked_fields[seed_key] = data
+			# Union merge removed_items
+			var stored_removed: Dictionary = data.get(
+				"removed_items", {}
+			)
+			for key: String in incoming_removed:
+				if not stored_removed.has(key):
+					stored_removed[key] = incoming_removed[key]
+			data["removed_items"] = stored_removed
+			# Union merge placed_items
+			var stored_placed: Dictionary = data.get(
+				"placed_items", {}
+			)
+			for key: String in incoming_placed:
+				if not stored_placed.has(key):
+					stored_placed[key] = incoming_placed[key]
+			data["placed_items"] = stored_placed
+			# Per-slot max for gateway_versions
+			var stored_gv: Variant = data.get(
+				"gateway_versions", [0, 0, 0, 0]
+			)
+			if stored_gv is Array:
+				@warning_ignore("unsafe_cast")
+				var gv_arr: Array = stored_gv as Array
+				for i: int in range(
+					mini(gv_arr.size(), incoming_gw_versions.size())
+				):
+					# gv_arr elements are Variant from JSON; safe after Array type check
+					@warning_ignore("unsafe_call_argument")
+					if incoming_gw_versions[i] > int(gv_arr[i]):
+						gv_arr[i] = incoming_gw_versions[i]
+						# Replace gateway at this slot if available
+						if i < incoming_gateways.size():
+							var stored_gws: Variant = data.get(
+								"gateways", []
+							)
+							if stored_gws is Array:
+								@warning_ignore("unsafe_cast")
+								var gws_arr: Array = stored_gws as Array
+								while gws_arr.size() <= i:
+									gws_arr.append({})
+								gws_arr[i] = incoming_gateways[i].duplicate(
+									true
+								)
+			data["last_modified"] = (
+				Time.get_datetime_string_from_system(true)
+			)
+	else:
+		# New entry — store as-is
+		linked_fields[seed_key] = {
+			"format_version": 1,
+			"last_modified": Time.get_datetime_string_from_system(true),
+			"last_modified_by": 0,
+			"pearl_type": "",
+			"removed_items": incoming_removed.duplicate(true),
+			"placed_items": incoming_placed.duplicate(true),
+			"gateway_versions": incoming_gw_versions.duplicate(),
+			"gateways": incoming_gateways.duplicate(true)
+		}
+
+	print(
+		"TownCloudStorage: Merged linked field CRDT for seed %d"
+		% generation_seed
+	)
 	_queue_save()
 
 
