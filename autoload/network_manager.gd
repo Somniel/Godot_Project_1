@@ -467,7 +467,8 @@ signal field_travel_requested(peer_id: int, gateway_id: int)
 ## Emitted on client when server approves field travel with CRDT state
 signal field_travel_approved(
 	gateway_id: int, generation_seed: int, pearl_type: String,
-	map_name: String, field_state_json: String
+	map_name: String, field_state_json: String,
+	host_steam_id: int, existing_field_lobby: int
 )
 
 
@@ -488,15 +489,19 @@ func request_field_travel(gateway_id: int) -> void:
 @rpc("authority", "call_remote", "reliable")
 func approve_field_travel(
 	gateway_id: int, generation_seed: int, pearl_type: String,
-	map_name: String, field_state_json: String
+	map_name: String, field_state_json: String,
+	host_steam_id: int, existing_field_lobby: int
 ) -> void:
 	## Called on client by server to approve field travel with CRDT state.
 	print(
-		"NetworkManager: Field travel approved for gateway %d (seed %d)"
-		% [gateway_id, generation_seed]
+		("NetworkManager: Field travel approved for gateway %d "
+		+ "(seed %d, existing=%d)") % [
+			gateway_id, generation_seed, existing_field_lobby
+		]
 	)
 	field_travel_approved.emit(
-		gateway_id, generation_seed, pearl_type, map_name, field_state_json
+		gateway_id, generation_seed, pearl_type, map_name,
+		field_state_json, host_steam_id, existing_field_lobby
 	)
 
 
@@ -565,12 +570,14 @@ func return_field_state(entries_json: String) -> void:
 func send_field_travel_approval(
 	peer_id: int, gateway_id: int, generation_seed: int,
 	pearl_type: StringName, map_name: String,
-	field_state_json: String
+	field_state_json: String,
+	host_steam_id: int, existing_field_lobby: int
 ) -> void:
 	## Called by server to approve a client's field travel request.
 	if not multiplayer.is_server():
 		return
 	approve_field_travel.rpc_id(
 		peer_id, gateway_id, generation_seed, String(pearl_type),
-		map_name, field_state_json
+		map_name, field_state_json, host_steam_id,
+		existing_field_lobby
 	)
