@@ -111,14 +111,15 @@ func test_find_field_by_seed_without_steam() -> void:
 		pending("Steam is initialized, skipping offline test")
 		return
 
-	var callback_result: int = -1
+	# Use Array to capture result — lambdas copy local ints by value
+	var result: Array[int] = [-1]
 	LobbyManager.find_field_by_seed(12345, func(
 		lobby_id: int
 	) -> void:
-		callback_result = lobby_id
+		result[0] = lobby_id
 	)
 
-	assert_eq(callback_result, 0, "Should callback with 0 without Steam")
+	assert_eq(result[0], 0, "Should callback with 0 without Steam")
 
 
 func test_find_field_by_seed_blocked_by_active_query() -> void:
@@ -130,15 +131,16 @@ func test_find_field_by_seed_blocked_by_active_query() -> void:
 	# Simulate an active find-by-owner query
 	LobbyManager._is_finding_lobby = true
 
-	var callback_result: int = -1
+	# Use Array to capture result — lambdas copy local ints by value
+	var result: Array[int] = [-1]
 	LobbyManager.find_field_by_seed(99999, func(
 		lobby_id: int
 	) -> void:
-		callback_result = lobby_id
+		result[0] = lobby_id
 	)
 
 	assert_eq(
-		callback_result, 0,
+		result[0], 0,
 		"Should callback with 0 when another query is active"
 	)
 	assert_false(
