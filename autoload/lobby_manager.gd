@@ -29,6 +29,9 @@ var _pending_lobby_data_requests: Array[int] = []
 var _find_lobby_callback: Callable = Callable()
 var _find_lobby_steam_id: int = 0
 var _is_finding_lobby: bool = false
+var _find_field_callback: Callable = Callable()
+var _find_field_seed: int = 0
+var _is_finding_field: bool = false
 
 
 func _ready() -> void:
@@ -180,7 +183,7 @@ func find_lobby_by_owner(steam_id: int, callback: Callable) -> void:
 	## Find a town lobby by owner Steam ID.
 	## Queries Steam lobby list filtered by owner_steam_id metadata.
 	## Calls callback(lobby_id: int) when done - 0 means not found.
-	if _steam == null:
+	if _steam == null or _is_finding_lobby or _is_finding_field:
 		callback.call(0)
 		return
 
@@ -198,6 +201,40 @@ func find_lobby_by_owner(steam_id: int, callback: Callable) -> void:
 	@warning_ignore("unsafe_method_access")
 	_steam.addRequestLobbyListStringFilter(
 		"server_type", "town", LOBBY_COMPARISON_EQUAL
+	)
+	@warning_ignore("unsafe_method_access")
+	_steam.addRequestLobbyListDistanceFilter(LOBBY_DISTANCE_WORLDWIDE)
+	@warning_ignore("unsafe_method_access")
+	_steam.requestLobbyList()
+
+
+func find_field_by_seed(
+	generation_seed: int, callback: Callable
+) -> void:
+	## Find an active field lobby by generation seed.
+	## Queries Steam lobby list filtered by server_type and generation_seed.
+	## Calls callback(lobby_id: int) when done - 0 means not found.
+	if _steam == null or _is_finding_lobby or _is_finding_field:
+		callback.call(0)
+		return
+
+	_find_field_callback = callback
+	_find_field_seed = generation_seed
+	_is_finding_field = true
+
+	print(
+		"LobbyManager: Searching for field with seed %d..."
+		% generation_seed
+	)
+
+	@warning_ignore("unsafe_method_access")
+	_steam.addRequestLobbyListStringFilter(
+		"server_type", "field", LOBBY_COMPARISON_EQUAL
+	)
+	@warning_ignore("unsafe_method_access")
+	_steam.addRequestLobbyListStringFilter(
+		"generation_seed", str(generation_seed),
+		LOBBY_COMPARISON_EQUAL
 	)
 	@warning_ignore("unsafe_method_access")
 	_steam.addRequestLobbyListDistanceFilter(LOBBY_DISTANCE_WORLDWIDE)
@@ -240,6 +277,25 @@ func _on_lobby_joined(lobby_id: int, _permissions: int, _locked: bool, response:
 
 
 func _on_lobby_match_list(lobbies: Array) -> void:
+	if _is_finding_field:
+		_is_finding_field = false
+		var found_id: int = 0
+		for lobby_id: Variant in lobbies:
+			if lobby_id is int:
+				@warning_ignore("unsafe_cast")
+				found_id = lobby_id as int
+				break  # First match (filters already applied)
+		print(
+			"LobbyManager: Find-by-seed result: %d (searched %d lobbies)"
+			% [found_id, lobbies.size()]
+		)
+		var cb: Callable = _find_field_callback
+		_find_field_callback = Callable()
+		_find_field_seed = 0
+		if cb.is_valid():
+			cb.call(found_id)
+		return
+
 	if _is_finding_lobby:
 		_is_finding_lobby = false
 		var found_id: int = 0

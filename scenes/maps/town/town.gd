@@ -504,29 +504,46 @@ func _on_host_travel_confirmed() -> void:
 	_pending_travel_gateway = null
 
 	if _pending_travel_lobby_id == -1 and _pending_create_seed > 0:
-		# Create new field and travel
+		# Query for existing field before creating a new one
 		var field_seed: int = _pending_create_seed
 		var pearl_type: StringName = _pending_create_pearl_type
 		_pending_create_seed = 0
 		_pending_create_pearl_type = &""
 		_pending_travel_lobby_id = 0
 
-		# Set travel source so destination knows where we came from
-		# For new field creation, target_gateway_id is not yet known (field will set it up)
-		MapManager.set_travel_source(
-			LobbyManager.current_lobby_id, gateway_id, -1, "field"
-		)
+		var gw_id: int = gateway_id
+		var town_name: String = get_town_name()
+		var current_lobby: int = LobbyManager.current_lobby_id
 
-		print("Town: Host confirmed field creation with seed %d, pearl %s via gateway %d" % [
-			field_seed, pearl_type, gateway_id
-		])
-		MapManager.create_field(
-			field_seed,
-			LobbyManager.current_lobby_id,
-			gateway_id if gateway_id >= 0 else 0,
-			get_town_name(),
-			pearl_type,
-			SteamManager.get_steam_id()
+		LobbyManager.find_field_by_seed(field_seed, func(
+			found_lobby: int
+		) -> void:
+			MapManager.set_travel_source(
+				current_lobby, gw_id, -1, "field"
+			)
+			if found_lobby > 0:
+				# Join existing field instead of creating duplicate
+				print(
+					("Town: Host joining existing field %d "
+					+ "(seed %d) via gateway %d") % [
+						found_lobby, field_seed, gw_id
+					]
+				)
+				MapManager.travel_to_field(found_lobby)
+			else:
+				# No existing field — create new
+				print(
+					("Town: Host creating field seed %d, "
+					+ "pearl %s via gateway %d") % [
+						field_seed, pearl_type, gw_id
+					]
+				)
+				MapManager.create_field(
+					field_seed, current_lobby,
+					gw_id if gw_id >= 0 else 0,
+					town_name, pearl_type,
+					SteamManager.get_steam_id()
+				)
 		)
 	elif _pending_travel_lobby_id > 0:
 		var lobby_id: int = _pending_travel_lobby_id
@@ -799,7 +816,7 @@ func _on_p2p_crdt_request_received(
 
 func _on_field_travel_requested(peer_id: int, gateway_id: int) -> void:
 	## Server handler: client wants to travel through a configured gateway.
-	## Validates the gateway and sends CRDT state + config for field creation.
+	## Queries for existing field lobby, then sends CRDT state + config.
 	if not multiplayer.is_server():
 		return
 
@@ -826,8 +843,6 @@ func _on_field_travel_requested(peer_id: int, gateway_id: int) -> void:
 		)
 		return
 
-	_pending_gateway_creations[gateway_id] = true
-
 	# Build CRDT state from town cloud storage
 	var field_state: Dictionary = {}
 	if _town_storage != null:
@@ -840,34 +855,59 @@ func _on_field_travel_requested(peer_id: int, gateway_id: int) -> void:
 
 	var state_json: String = JSON.stringify(field_state)
 
-	print(
-		("Town: Approving field travel for peer %d via gateway %d "
-		+ "(seed %d, pearl %s)") % [
-			peer_id, gateway_id,
-			gateway.generation_seed, gateway.pearl_type
-		]
-	)
+	# Query for existing field lobby before approving
+	var gw_seed: int = gateway.generation_seed
+	var gw_pearl: StringName = gateway.pearl_type
+	var gw_map: String = gateway.linked_map_name
+	var host_id: int = SteamManager.get_steam_id()
 
-	NetworkManager.send_field_travel_approval(
-		peer_id, gateway_id, gateway.generation_seed,
-		gateway.pearl_type, gateway.linked_map_name, state_json
-	)
+	LobbyManager.find_field_by_seed(gw_seed, func(
+		found_lobby: int
+	) -> void:
+		# Only mark pending creation if no existing field
+		if found_lobby <= 0:
+			_pending_gateway_creations[gateway_id] = true
 
-	# Clear pending after a timeout (client may disconnect before creating)
-	@warning_ignore("return_value_discarded")
-	get_tree().create_timer(60.0).timeout.connect(
-		func() -> void:
+		print(
+			("Town: Approving field travel for peer %d via "
+			+ "gateway %d (seed %d, pearl %s, existing=%d)"
+			) % [
+				peer_id, gateway_id, gw_seed, gw_pearl,
+				found_lobby
+			]
+		)
+
+		NetworkManager.send_field_travel_approval(
+			peer_id, gateway_id, gw_seed, gw_pearl, gw_map,
+			state_json, host_id, maxi(found_lobby, 0)
+		)
+
+		# Update gateway link if an existing field was found
+		if found_lobby > 0:
+			gateway.set_link(
+				found_lobby, gw_map, gateway.linked_gateway_id
+			)
+			gateway.generation_seed = gw_seed
+			gateway.pearl_type = gw_pearl
+
+		# Clear pending after a timeout
+		if found_lobby <= 0:
 			@warning_ignore("return_value_discarded")
-			_pending_gateway_creations.erase(gateway_id)
+			get_tree().create_timer(60.0).timeout.connect(
+				func() -> void:
+					@warning_ignore("return_value_discarded")
+					_pending_gateway_creations.erase(gateway_id)
+			)
 	)
 
 
 func _on_field_travel_approved(
 	gateway_id: int, generation_seed: int, pearl_type: String,
-	_map_name: String, field_state_json: String
+	_map_name: String, field_state_json: String,
+	host_steam_id: int, existing_field_lobby: int
 ) -> void:
 	## Client handler: server approved our field travel request.
-	## Store CRDT state and create the field.
+	## Joins existing field if available, otherwise creates new.
 	if multiplayer.is_server():
 		return
 
@@ -882,7 +922,7 @@ func _on_field_travel_approved(
 			@warning_ignore("unsafe_cast")
 			field_state = parsed as Dictionary
 
-	# Store CRDT state for the new field to consume
+	# Store CRDT state for the field to consume
 	if not field_state.is_empty():
 		MapManager.set_pending_field_crdt(field_state)
 
@@ -891,24 +931,36 @@ func _on_field_travel_approved(
 		LobbyManager.current_lobby_id, gateway_id, -1, "field"
 	)
 
-	print(
-		("Town: Client creating field from approval "
-		+ "(seed %d, pearl %s, gateway %d)") % [
-			generation_seed, pearl_type, gateway_id
-		]
-	)
-
-	var pearl_sn: StringName = (
-		StringName(pearl_type) if not pearl_type.is_empty() else &""
-	)
-	MapManager.create_field(
-		generation_seed,
-		LobbyManager.current_lobby_id,
-		gateway_id,
-		get_town_name(),
-		pearl_sn,
-		SteamManager.get_steam_id()
-	)
+	if existing_field_lobby > 0:
+		# Join existing field lobby instead of creating a new one
+		print(
+			("Town: Client joining existing field %d from approval "
+			+ "(seed %d, gateway %d)") % [
+				existing_field_lobby, generation_seed, gateway_id
+			]
+		)
+		MapManager.travel_to_field(existing_field_lobby)
+	else:
+		# Create new field with town HOST's Steam ID as origin owner
+		print(
+			("Town: Client creating field from approval "
+			+ "(seed %d, pearl %s, gateway %d, host %d)") % [
+				generation_seed, pearl_type, gateway_id,
+				host_steam_id
+			]
+		)
+		var pearl_sn: StringName = (
+			StringName(pearl_type) if not pearl_type.is_empty()
+			else &""
+		)
+		MapManager.create_field(
+			generation_seed,
+			LobbyManager.current_lobby_id,
+			gateway_id,
+			get_town_name(),
+			pearl_sn,
+			host_steam_id
+		)
 
 
 func _request_field_state_from_peer(peer_id: int) -> void:
