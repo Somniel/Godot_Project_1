@@ -11,6 +11,9 @@ signal travel_started(destination_lobby_id: int)
 ## Emitted when travel completes and new map is loaded
 signal travel_completed
 
+## Emitted when a staged field lobby is created and ready to be reported
+signal staged_field_ready(lobby_id: int)
+
 ## Emitted when town state is saved to Steam Cloud (reserved for future use)
 @warning_ignore("unused_signal")
 signal town_state_saved
@@ -79,6 +82,12 @@ func _ready() -> void:
 	@warning_ignore("return_value_discarded")
 	NetworkManager.disconnected.connect(_on_disconnected)
 
+	# Connect staged lobby signals for two-phase field creation
+	@warning_ignore("return_value_discarded")
+	LobbyManager.staged_lobby_created.connect(_on_staged_lobby_created)
+	@warning_ignore("return_value_discarded")
+	LobbyManager.staged_lobby_failed.connect(_on_staged_lobby_failed)
+
 
 func _exit_tree() -> void:
 	# Flush any pending town storage saves before shutdown
@@ -91,6 +100,18 @@ func _exit_tree() -> void:
 		NetworkManager.client_started.disconnect(_on_client_started)
 	if NetworkManager.disconnected.is_connected(_on_disconnected):
 		NetworkManager.disconnected.disconnect(_on_disconnected)
+	if LobbyManager.staged_lobby_created.is_connected(
+		_on_staged_lobby_created
+	):
+		LobbyManager.staged_lobby_created.disconnect(
+			_on_staged_lobby_created
+		)
+	if LobbyManager.staged_lobby_failed.is_connected(
+		_on_staged_lobby_failed
+	):
+		LobbyManager.staged_lobby_failed.disconnect(
+			_on_staged_lobby_failed
+		)
 
 
 # =============================================================================
@@ -413,9 +434,11 @@ func create_field(
 	pearl_type: StringName = &"",
 	origin_owner_steam_id: int = 0
 ) -> void:
-	print("MapManager: Creating field with seed %d, pearl %s from gateway %d..." % [
-		generation_seed, pearl_type, origin_gateway
-	])
+	print(
+		"MapManager: Creating field with seed %d, pearl %s "
+		% [generation_seed, pearl_type]
+		+ "from gateway %d..." % origin_gateway
+	)
 
 	# Store field creation params for when lobby is created
 	_pending_field_seed = generation_seed
@@ -429,14 +452,20 @@ func create_field(
 	# If we're the town host, save the town lobby ID so we can return
 	if is_town_host():
 		_own_town_lobby_id = LobbyManager.current_lobby_id
-		print("MapManager: Saving town lobby %d for return" % _own_town_lobby_id)
+		print(
+			"MapManager: Saving town lobby %d for return"
+			% _own_town_lobby_id
+		)
 
-	# Leave current lobby before creating the field lobby
-	NetworkManager.disconnect_peer()
-	LobbyManager.leave_lobby()
-
-	# Create the field lobby (we'll become host)
-	LobbyManager.create_lobby(8)
+	if LobbyManager.current_lobby_id != 0:
+		# Staged path: create invisible lobby while still connected
+		# to the current lobby. The lobby will be promoted after
+		# reporting back to the server via RPC.
+		print("MapManager: Using staged lobby creation")
+		LobbyManager.create_staged_lobby(8)
+	else:
+		# Direct path: not in a lobby (e.g., fallback)
+		LobbyManager.create_lobby(8)
 
 
 ## Re-host our own town (called when returning from a field)
@@ -467,6 +496,9 @@ var _restoring_field_old_lobby_id: int = 0
 ## Consumed by the field scene during initialization.
 var _pending_field_crdt: Dictionary = {}
 
+## Whether staged field metadata has already been set (skip in _on_host_started)
+var _staged_metadata_done: bool = false
+
 
 # =============================================================================
 # Signal Handlers
@@ -476,7 +508,9 @@ func _on_host_started() -> void:
 	# Determine map type from pending state or lobby metadata
 	if _creating_field:
 		_current_map_type = MAP_TYPE_FIELD
-		_setup_field_metadata()
+		if not _staged_metadata_done:
+			_setup_field_metadata()
+		_staged_metadata_done = false
 		_creating_field = false
 	else:
 		_current_map_type = MAP_TYPE_TOWN
@@ -519,6 +553,44 @@ func _on_client_started() -> void:
 func _on_disconnected() -> void:
 	print("MapManager: Disconnected from map")
 	_current_map_type = MAP_TYPE_NONE
+
+
+func _on_staged_lobby_created(lobby_id: int) -> void:
+	## Handle staged lobby creation for two-phase field creation.
+	## Sets metadata on the staged lobby and signals readiness.
+	if not _creating_field:
+		return
+
+	print(
+		"MapManager: Staged field lobby %d created, setting metadata"
+		% lobby_id
+	)
+	_setup_staged_field_metadata(lobby_id)
+	_staged_metadata_done = true
+	staged_field_ready.emit(lobby_id)
+
+
+func _on_staged_lobby_failed(reason: String) -> void:
+	## Handle staged lobby creation failure.
+	if _creating_field:
+		_creating_field = false
+		_staged_metadata_done = false
+		push_warning(
+			"MapManager: Staged field creation failed: %s" % reason
+		)
+
+
+func finish_staged_field_transition() -> void:
+	## Disconnect from the current lobby and promote the staged field lobby.
+	## Called by the map scene (town.gd) after reporting the lobby ID back
+	## to the server (client path) or updating the gateway (host path).
+	print("MapManager: Finishing staged field transition")
+	NetworkManager.disconnect_peer()
+	# Leave current lobby but preserve the staged lobby for promotion
+	LobbyManager.leave_lobby(true)
+	LobbyManager.promote_staged_lobby()
+	# promote emits lobby_created -> NetworkManager.start_host() ->
+	# host_started -> _on_host_started -> scene change
 
 
 # =============================================================================
@@ -588,6 +660,52 @@ func _setup_field_metadata() -> void:
 
 	# Track current field lobby for caching on exit
 	_current_field_lobby_id = LobbyManager.current_lobby_id
+
+
+func _setup_staged_field_metadata(lobby_id: int) -> void:
+	## Set field metadata on a staged (invisible) lobby.
+	## Mirrors _setup_field_metadata but uses set_staged_lobby_metadata
+	## since the staged lobby is not the current active lobby.
+	@warning_ignore("return_value_discarded")
+	LobbyManager.set_staged_lobby_metadata(
+		"server_type", MAP_TYPE_FIELD
+	)
+	@warning_ignore("return_value_discarded")
+	LobbyManager.set_staged_lobby_metadata(
+		"server_name", "Field %d" % _pending_field_seed
+	)
+	@warning_ignore("return_value_discarded")
+	LobbyManager.set_staged_lobby_metadata(
+		"origin_lobby_id", str(_pending_field_origin_lobby)
+	)
+	@warning_ignore("return_value_discarded")
+	LobbyManager.set_staged_lobby_metadata(
+		"origin_gateway", str(_pending_field_origin_gateway)
+	)
+	@warning_ignore("return_value_discarded")
+	LobbyManager.set_staged_lobby_metadata(
+		"generation_seed", str(_pending_field_seed)
+	)
+	@warning_ignore("return_value_discarded")
+	LobbyManager.set_staged_lobby_metadata(
+		"origin_map_name", _pending_field_origin_name
+	)
+	@warning_ignore("return_value_discarded")
+	LobbyManager.set_staged_lobby_metadata(
+		"pearl_type", str(_pending_field_pearl_type)
+	)
+
+	# Store origin owner Steam ID so field can determine ownership
+	var origin_owner: int = _pending_field_origin_owner
+	if origin_owner <= 0:
+		origin_owner = SteamManager.get_steam_id()
+	@warning_ignore("return_value_discarded")
+	LobbyManager.set_staged_lobby_metadata(
+		"origin_owner_steam_id", str(origin_owner)
+	)
+
+	# Track current field lobby for caching on exit
+	_current_field_lobby_id = lobby_id
 
 
 func _rehost_own_town() -> void:

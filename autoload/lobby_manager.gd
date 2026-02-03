@@ -9,6 +9,8 @@ signal lobby_join_failed(reason: String)
 signal lobby_left
 signal lobby_list_received(lobbies: Array)
 signal lobby_data_received(lobby_id: int, success: bool)
+signal staged_lobby_created(lobby_id: int)
+signal staged_lobby_failed(reason: String)
 
 ## Lobby type constants from Steam API
 const LOBBY_TYPE_PRIVATE: int = 0
@@ -32,6 +34,8 @@ var _is_finding_lobby: bool = false
 var _find_field_callback: Callable = Callable()
 var _find_field_seed: int = 0
 var _is_finding_field: bool = false
+var _staged_lobby_id: int = 0
+var _is_creating_staged: bool = false
 
 
 func _ready() -> void:
@@ -86,9 +90,16 @@ func join_lobby(lobby_id: int) -> void:
 	_steam.joinLobby(lobby_id)
 
 
-func leave_lobby() -> void:
+func leave_lobby(preserve_staged: bool = false) -> void:
+	## Leave the current lobby.
+	## Set preserve_staged=true during staged field transitions to keep
+	## the staged lobby alive for promotion after leaving.
 	if current_lobby_id == 0:
 		return
+
+	# Clean up any staged lobby unless preserving for transition
+	if not preserve_staged:
+		abandon_staged_lobby()
 
 	if _steam != null:
 		print("LobbyManager: Leaving lobby %d" % current_lobby_id)
@@ -98,6 +109,68 @@ func leave_lobby() -> void:
 	current_lobby_id = 0
 	is_host = false
 	lobby_left.emit()
+
+
+func create_staged_lobby(max_players: int = 8) -> void:
+	## Create an invisible lobby alongside the current active lobby.
+	## Used for staged field creation while still connected to a town.
+	## Emits staged_lobby_created or staged_lobby_failed.
+	if _steam == null:
+		staged_lobby_failed.emit("Steam not initialized")
+		return
+
+	if _staged_lobby_id != 0 or _is_creating_staged:
+		staged_lobby_failed.emit("Staged lobby already pending")
+		return
+
+	print("LobbyManager: Creating staged lobby for %d players..." % max_players)
+	_is_creating_staged = true
+	@warning_ignore("unsafe_method_access")
+	_steam.createLobby(LOBBY_TYPE_INVISIBLE, max_players)
+
+
+func set_staged_lobby_metadata(key: String, value: String) -> bool:
+	## Set metadata on the staged lobby (not the current active lobby).
+	if _steam == null or _staged_lobby_id <= 0:
+		return false
+	@warning_ignore("unsafe_method_access")
+	return _steam.setLobbyData(_staged_lobby_id, key, value)
+
+
+func promote_staged_lobby() -> void:
+	## Promote the staged lobby to become the current active lobby.
+	## Call AFTER disconnecting from the previous lobby.
+	## Emits lobby_created to trigger NetworkManager auto-host.
+	if _staged_lobby_id <= 0:
+		push_warning("LobbyManager: No staged lobby to promote")
+		return
+
+	current_lobby_id = _staged_lobby_id
+	is_host = true
+	_staged_lobby_id = 0
+
+	print(
+		"LobbyManager: Promoted staged lobby %d to active"
+		% current_lobby_id
+	)
+
+	# Make the lobby publicly discoverable
+	@warning_ignore("unsafe_method_access")
+	_steam.setLobbyType(current_lobby_id, LOBBY_TYPE_PUBLIC)
+
+	lobby_created.emit(current_lobby_id)
+
+
+func abandon_staged_lobby() -> void:
+	## Clean up a staged lobby without promoting it.
+	if _staged_lobby_id <= 0:
+		return
+
+	print("LobbyManager: Abandoning staged lobby %d" % _staged_lobby_id)
+	if _steam != null:
+		@warning_ignore("unsafe_method_access")
+		_steam.leaveLobby(_staged_lobby_id)
+	_staged_lobby_id = 0
 
 
 func request_lobby_list() -> void:
@@ -247,7 +320,21 @@ func find_field_by_seed(
 func _on_lobby_created(result: int, lobby_id: int) -> void:
 	if result != 1:  # 1 = k_EResultOK
 		print("LobbyManager: Failed to create lobby, result: %d" % result)
-		lobby_create_failed.emit("Steam error code: %d" % result)
+		if _is_creating_staged:
+			_is_creating_staged = false
+			staged_lobby_failed.emit("Steam error code: %d" % result)
+		else:
+			lobby_create_failed.emit("Steam error code: %d" % result)
+		return
+
+	# Route staged lobby creation separately
+	if _is_creating_staged:
+		_is_creating_staged = false
+		_staged_lobby_id = lobby_id
+		print(
+			"LobbyManager: Staged lobby created (ID: %d)" % lobby_id
+		)
+		staged_lobby_created.emit(lobby_id)
 		return
 
 	current_lobby_id = lobby_id
@@ -256,7 +343,9 @@ func _on_lobby_created(result: int, lobby_id: int) -> void:
 	print("LobbyManager: Lobby created successfully (ID: %d)" % lobby_id)
 
 	# Set default metadata with sanitized username
-	var sanitized_name: String = Utils.sanitize_display_string(SteamManager.get_steam_username())
+	var sanitized_name: String = Utils.sanitize_display_string(
+		SteamManager.get_steam_username()
+	)
 	@warning_ignore("return_value_discarded")
 	set_lobby_metadata("server_name", "%s's Server" % sanitized_name)
 
@@ -264,6 +353,11 @@ func _on_lobby_created(result: int, lobby_id: int) -> void:
 
 
 func _on_lobby_joined(lobby_id: int, _permissions: int, _locked: bool, response: int) -> void:
+	# Skip join callback for staged lobbies — Steam fires both
+	# lobby_created and lobby_joined for createLobby calls
+	if _is_creating_staged or lobby_id == _staged_lobby_id:
+		return
+
 	if response != 1:  # 1 = k_EChatRoomEnterResponseSuccess
 		print("LobbyManager: Failed to join lobby, response: %d" % response)
 		lobby_join_failed.emit("Join failed, code: %d" % response)

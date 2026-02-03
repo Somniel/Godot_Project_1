@@ -9,8 +9,11 @@ var _pending_create_seed: int = 0
 var _pending_create_pearl_type: StringName = &""
 var _town_storage: TownCloudStorage = null
 var _is_loading_complete: bool = false
-## Tracks gateways with pending client field creations to prevent duplicates
-var _pending_gateway_creations: Dictionary = {}  # gateway_id -> true
+## Tracks gateways with pending client field creations.
+## Maps gateway_id -> approved creator's Steam ID for validation.
+var _pending_gateway_creations: Dictionary = {}  # gateway_id -> steam_id
+## Gateway ID being used for staged field creation (for reporting back)
+var _staged_gateway_id: int = -1
 
 
 func _ready() -> void:
@@ -59,6 +62,10 @@ func _connect_town_signals() -> void:
 		@warning_ignore("return_value_discarded")
 		_host_travel_warning.cancelled.connect(_on_host_travel_cancelled)
 
+	# Staged field creation (both host and client)
+	@warning_ignore("return_value_discarded")
+	MapManager.staged_field_ready.connect(_on_staged_field_ready)
+
 	# Server-only signals
 	if multiplayer.is_server():
 		@warning_ignore("return_value_discarded")
@@ -68,6 +75,10 @@ func _connect_town_signals() -> void:
 		@warning_ignore("return_value_discarded")
 		NetworkManager.field_state_returned.connect(
 			_on_field_state_returned
+		)
+		@warning_ignore("return_value_discarded")
+		NetworkManager.staged_field_lobby_reported.connect(
+			_on_staged_field_lobby_reported
 		)
 
 	# Client-only signals
@@ -192,6 +203,14 @@ func _disconnect_town_signals() -> void:
 	):
 		NetworkManager.field_state_return_requested.disconnect(
 			_on_field_state_return_requested
+		)
+	if MapManager.staged_field_ready.is_connected(_on_staged_field_ready):
+		MapManager.staged_field_ready.disconnect(_on_staged_field_ready)
+	if NetworkManager.staged_field_lobby_reported.is_connected(
+		_on_staged_field_lobby_reported
+	):
+		NetworkManager.staged_field_lobby_reported.disconnect(
+			_on_staged_field_lobby_reported
 		)
 	if P2PSyncManager.crdt_state_received.is_connected(_on_p2p_crdt_state_received):
 		P2PSyncManager.crdt_state_received.disconnect(_on_p2p_crdt_state_received)
@@ -471,9 +490,24 @@ func _on_lobby_data_received(lobby_id: int, exists: bool) -> void:
 					_toast_ui.show_toast("Field is not currently hosted")
 		elif gateway.generation_seed > 0:
 			# No cache but we have the seed - can recreate the field
-			print("Town: Recreating field from seed %d (old lobby %d no longer exists)" % [
-				gateway.generation_seed, lobby_id
-			])
+			print(
+				"Town: Recreating field from seed %d "
+				% gateway.generation_seed
+				+ "(old lobby %d no longer exists)" % lobby_id
+			)
+
+			# Clear the stale lobby ID but keep the seed config
+			gateway.set_config(
+				gateway.generation_seed,
+				gateway.linked_map_name,
+				gateway.pearl_type
+			)
+			if multiplayer.is_server() and _town_storage != null:
+				_town_storage.set_gateway_link(
+					gateway.gateway_id, 0,
+					gateway.linked_map_name
+				)
+
 			if multiplayer.is_server():
 				# Host can recreate the field
 				_pending_travel_lobby_id = -1  # Special value for "create new"
@@ -500,50 +534,37 @@ func _on_host_travel_confirmed() -> void:
 	## Handle host confirming they want to leave the town.
 	var gateway: Gateway = _pending_travel_gateway
 	var gateway_id: int = gateway.gateway_id if gateway != null else -1
-	var target_gateway_id: int = gateway.linked_gateway_id if gateway != null else -1
+	var target_gateway_id: int = (
+		gateway.linked_gateway_id if gateway != null else -1
+	)
 	_pending_travel_gateway = null
 
 	if _pending_travel_lobby_id == -1 and _pending_create_seed > 0:
-		# Query for existing field before creating a new one
+		# Create new field — _pending_travel_lobby_id == -1 means the
+		# destination was already validated as non-existent or was never
+		# created. Always create, never join.
 		var field_seed: int = _pending_create_seed
 		var pearl_type: StringName = _pending_create_pearl_type
 		_pending_create_seed = 0
 		_pending_create_pearl_type = &""
 		_pending_travel_lobby_id = 0
 
-		var gw_id: int = gateway_id
-		var town_name: String = get_town_name()
-		var current_lobby: int = LobbyManager.current_lobby_id
+		MapManager.set_travel_source(
+			LobbyManager.current_lobby_id, gateway_id, -1, "field"
+		)
 
-		LobbyManager.find_field_by_seed(field_seed, func(
-			found_lobby: int
-		) -> void:
-			MapManager.set_travel_source(
-				current_lobby, gw_id, -1, "field"
-			)
-			if found_lobby > 0:
-				# Join existing field instead of creating duplicate
-				print(
-					("Town: Host joining existing field %d "
-					+ "(seed %d) via gateway %d") % [
-						found_lobby, field_seed, gw_id
-					]
-				)
-				MapManager.travel_to_field(found_lobby)
-			else:
-				# No existing field — create new
-				print(
-					("Town: Host creating field seed %d, "
-					+ "pearl %s via gateway %d") % [
-						field_seed, pearl_type, gw_id
-					]
-				)
-				MapManager.create_field(
-					field_seed, current_lobby,
-					gw_id if gw_id >= 0 else 0,
-					town_name, pearl_type,
-					SteamManager.get_steam_id()
-				)
+		print(
+			("Town: Host creating field seed %d, "
+			+ "pearl %s via gateway %d") % [
+				field_seed, pearl_type, gateway_id
+			]
+		)
+		_staged_gateway_id = gateway_id
+		MapManager.create_field(
+			field_seed, LobbyManager.current_lobby_id,
+			gateway_id if gateway_id >= 0 else 0,
+			get_town_name(), pearl_type,
+			SteamManager.get_steam_id()
 		)
 	elif _pending_travel_lobby_id > 0:
 		var lobby_id: int = _pending_travel_lobby_id
@@ -816,7 +837,7 @@ func _on_p2p_crdt_request_received(
 
 func _on_field_travel_requested(peer_id: int, gateway_id: int) -> void:
 	## Server handler: client wants to travel through a configured gateway.
-	## Queries for existing field lobby, then sends CRDT state + config.
+	## Checks gateway state synchronously and sends CRDT state + approval.
 	if not multiplayer.is_server():
 		return
 
@@ -838,8 +859,9 @@ func _on_field_travel_requested(peer_id: int, gateway_id: int) -> void:
 	# Prevent duplicate creation attempts
 	if _pending_gateway_creations.has(gateway_id):
 		push_warning(
-			"Town: Gateway %d creation already pending, rejecting peer %d"
-			% [gateway_id, peer_id]
+			"Town: Gateway %d creation already pending, "
+			% gateway_id
+			+ "rejecting peer %d" % peer_id
 		)
 		return
 
@@ -855,50 +877,48 @@ func _on_field_travel_requested(peer_id: int, gateway_id: int) -> void:
 
 	var state_json: String = JSON.stringify(field_state)
 
-	# Query for existing field lobby before approving
-	var gw_seed: int = gateway.generation_seed
-	var gw_pearl: StringName = gateway.pearl_type
-	var gw_map: String = gateway.linked_map_name
-	var host_id: int = SteamManager.get_steam_id()
-
-	LobbyManager.find_field_by_seed(gw_seed, func(
-		found_lobby: int
-	) -> void:
-		# Only mark pending creation if no existing field
-		if found_lobby <= 0:
-			_pending_gateway_creations[gateway_id] = true
-
+	if gateway.linked_lobby_id > 0:
+		# Fast path: field already exists, approve join
 		print(
-			("Town: Approving field travel for peer %d via "
-			+ "gateway %d (seed %d, pearl %s, existing=%d)"
-			) % [
-				peer_id, gateway_id, gw_seed, gw_pearl,
-				found_lobby
+			("Town: Approving field JOIN for peer %d via "
+			+ "gateway %d (seed %d, lobby %d)") % [
+				peer_id, gateway_id, gateway.generation_seed,
+				gateway.linked_lobby_id
 			]
 		)
-
 		NetworkManager.send_field_travel_approval(
-			peer_id, gateway_id, gw_seed, gw_pearl, gw_map,
-			state_json, host_id, maxi(found_lobby, 0)
+			peer_id, gateway_id, gateway.generation_seed,
+			gateway.pearl_type, gateway.linked_map_name,
+			state_json, SteamManager.get_steam_id(),
+			gateway.linked_lobby_id
+		)
+	else:
+		# No existing field — approve creation via staged lobby
+		var creator_steam_id: int = (
+			NetworkManager.get_steam_id_for_peer(peer_id)
+		)
+		_pending_gateway_creations[gateway_id] = creator_steam_id
+
+		print(
+			("Town: Approving field CREATE for peer %d via "
+			+ "gateway %d (seed %d, pearl %s)") % [
+				peer_id, gateway_id, gateway.generation_seed,
+				gateway.pearl_type
+			]
+		)
+		NetworkManager.send_field_travel_approval(
+			peer_id, gateway_id, gateway.generation_seed,
+			gateway.pearl_type, gateway.linked_map_name,
+			state_json, SteamManager.get_steam_id(), 0
 		)
 
-		# Update gateway link if an existing field was found
-		if found_lobby > 0:
-			gateway.set_link(
-				found_lobby, gw_map, gateway.linked_gateway_id
-			)
-			gateway.generation_seed = gw_seed
-			gateway.pearl_type = gw_pearl
-
-		# Clear pending after a timeout
-		if found_lobby <= 0:
-			@warning_ignore("return_value_discarded")
-			get_tree().create_timer(60.0).timeout.connect(
-				func() -> void:
-					@warning_ignore("return_value_discarded")
-					_pending_gateway_creations.erase(gateway_id)
-			)
-	)
+		# Clear pending after a timeout in case client never reports back
+		@warning_ignore("return_value_discarded")
+		get_tree().create_timer(60.0).timeout.connect(
+			func() -> void:
+				@warning_ignore("return_value_discarded")
+				_pending_gateway_creations.erase(gateway_id)
+		)
 
 
 func _on_field_travel_approved(
@@ -941,14 +961,15 @@ func _on_field_travel_approved(
 		)
 		MapManager.travel_to_field(existing_field_lobby)
 	else:
-		# Create new field with town HOST's Steam ID as origin owner
+		# Create new field via staged lobby — track gateway for report
 		print(
-			("Town: Client creating field from approval "
+			("Town: Client creating field via staged lobby "
 			+ "(seed %d, pearl %s, gateway %d, host %d)") % [
 				generation_seed, pearl_type, gateway_id,
 				host_steam_id
 			]
 		)
+		_staged_gateway_id = gateway_id
 		var pearl_sn: StringName = (
 			StringName(pearl_type) if not pearl_type.is_empty()
 			else &""
@@ -961,6 +982,110 @@ func _on_field_travel_approved(
 			pearl_sn,
 			host_steam_id
 		)
+
+
+func _on_staged_field_ready(lobby_id: int) -> void:
+	## Handle staged field lobby creation completing.
+	## Host: updates gateway directly and broadcasts to clients.
+	## Client: reports the lobby ID back to the server via RPC.
+	## Both: finishes the transition (disconnect + promote + host).
+	var gw_id: int = _staged_gateway_id
+	_staged_gateway_id = -1
+
+	if gw_id < 0:
+		# No gateway tracked — shouldn't happen, but finish anyway
+		push_warning(
+			"Town: Staged field ready but no gateway tracked"
+		)
+		MapManager.finish_staged_field_transition()
+		return
+
+	if multiplayer.is_server():
+		# Host path: update gateway link directly
+		if gw_id < _gateways.size():
+			var gateway: Gateway = _gateways[gw_id]
+			gateway.set_link(
+				lobby_id, gateway.linked_map_name,
+				gateway.linked_gateway_id
+			)
+			_save_gateway_link(
+				gw_id, lobby_id, gateway.linked_map_name
+			)
+			# Broadcast updated gateway to all clients
+			NetworkManager.broadcast_gateway_state(
+				gw_id, lobby_id, gateway.linked_map_name,
+				gateway.generation_seed, gateway.pearl_type,
+				gateway.linked_gateway_id
+			)
+			print(
+				("Town: Host updated gateway %d with staged "
+				+ "field lobby %d") % [gw_id, lobby_id]
+			)
+	else:
+		# Client path: report to server via RPC
+		print(
+			("Town: Client reporting staged field lobby %d "
+			+ "for gateway %d") % [lobby_id, gw_id]
+		)
+		NetworkManager.report_staged_field_lobby.rpc_id(
+			1, gw_id, lobby_id
+		)
+
+	# Complete the transition: disconnect + promote + host
+	MapManager.finish_staged_field_transition()
+
+
+func _on_staged_field_lobby_reported(
+	peer_id: int, gateway_id: int, lobby_id: int
+) -> void:
+	## Server handler: a client reports a newly created field lobby.
+	## Validates the sender against the approved creator, then updates
+	## the gateway link and broadcasts to all clients.
+	if not multiplayer.is_server():
+		return
+
+	if not _pending_gateway_creations.has(gateway_id):
+		push_warning(
+			"Town: No pending creation for gateway %d, "
+			% gateway_id
+			+ "rejecting report from peer %d" % peer_id
+		)
+		return
+
+	# Validate sender Steam ID matches the approved creator
+	var expected: int = _pending_gateway_creations.get(gateway_id, 0)
+	var sender: int = NetworkManager.get_steam_id_for_peer(peer_id)
+	if sender > 0 and expected > 0 and sender != expected:
+		push_warning(
+			"Town: Steam ID mismatch for gateway %d report "
+			% gateway_id
+			+ "(expected %d, got %d)" % [expected, sender]
+		)
+		return
+
+	_pending_gateway_creations.erase(gateway_id)
+
+	if gateway_id < 0 or gateway_id >= _gateways.size():
+		return
+
+	var gateway: Gateway = _gateways[gateway_id]
+	gateway.set_link(
+		lobby_id, gateway.linked_map_name, gateway.linked_gateway_id
+	)
+	_save_gateway_link(gateway_id, lobby_id, gateway.linked_map_name)
+
+	# Broadcast updated gateway to all clients
+	NetworkManager.broadcast_gateway_state(
+		gateway_id, lobby_id, gateway.linked_map_name,
+		gateway.generation_seed, gateway.pearl_type,
+		gateway.linked_gateway_id
+	)
+	print(
+		("Town: Server accepted staged field lobby %d "
+		+ "for gateway %d from peer %d") % [
+			lobby_id, gateway_id, peer_id
+		]
+	)
 
 
 func _request_field_state_from_peer(peer_id: int) -> void:

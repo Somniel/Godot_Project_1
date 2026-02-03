@@ -581,3 +581,46 @@ func send_field_travel_approval(
 		map_name, field_state_json, host_steam_id,
 		existing_field_lobby
 	)
+
+
+# =============================================================================
+# Staged Field Lobby Report RPCs
+# =============================================================================
+
+## Emitted on server when a client reports a newly created field lobby
+signal staged_field_lobby_reported(
+	peer_id: int, gateway_id: int, lobby_id: int
+)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func report_staged_field_lobby(gateway_id: int, lobby_id: int) -> void:
+	## Called by client to report a newly created field lobby to the server.
+	## Server validates the sender against the approved creator.
+	if not multiplayer.is_server():
+		return
+	var sender_id: int = multiplayer.get_remote_sender_id()
+	print(
+		"NetworkManager: Staged field report from peer %d "
+		% sender_id
+		+ "(gateway %d, lobby %d)" % [gateway_id, lobby_id]
+	)
+	staged_field_lobby_reported.emit(sender_id, gateway_id, lobby_id)
+
+
+func get_steam_id_for_peer(peer_id: int) -> int:
+	## Get the Steam 64-bit ID for a connected Godot peer.
+	## Uses SteamMultiplayerPeer.get_steam64_from_peer_id().
+	## Returns 0 if unavailable (no Steam, peer disconnected, etc.).
+	if _multiplayer_peer == null:
+		return 0
+	if not _multiplayer_peer.has_method("get_steam64_from_peer_id"):
+		return 0
+	@warning_ignore("unsafe_method_access")
+	var result: Variant = _multiplayer_peer.get_steam64_from_peer_id(
+		peer_id
+	)
+	if result is int:
+		@warning_ignore("unsafe_cast")
+		return result as int
+	return 0
