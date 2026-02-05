@@ -997,6 +997,12 @@ func _on_staged_field_ready(lobby_id: int) -> void:
 		push_warning(
 			"Town: Staged field ready but no gateway tracked"
 		)
+		if multiplayer.server_disconnected.is_connected(
+			_on_server_disconnected
+		):
+			multiplayer.server_disconnected.disconnect(
+				_on_server_disconnected
+			)
 		MapManager.finish_staged_field_transition()
 		return
 
@@ -1029,6 +1035,16 @@ func _on_staged_field_ready(lobby_id: int) -> void:
 		)
 		NetworkManager.report_staged_field_lobby.rpc_id(
 			1, gw_id, lobby_id
+		)
+
+	# Disconnect server_disconnected before the intentional disconnect
+	# to prevent _on_server_disconnected → _return_to_menu() from
+	# destroying the staged lobby when the client peer is closed.
+	if multiplayer.server_disconnected.is_connected(
+		_on_server_disconnected
+	):
+		multiplayer.server_disconnected.disconnect(
+			_on_server_disconnected
 		)
 
 	# Complete the transition: disconnect + promote + host

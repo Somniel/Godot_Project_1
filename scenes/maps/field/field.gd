@@ -127,6 +127,10 @@ func _connect_field_signals() -> void:
 	@warning_ignore("return_value_discarded")
 	NetworkManager.field_crdt_received.connect(_on_field_crdt_received)
 
+	# Staged field creation (field-to-field travel)
+	@warning_ignore("return_value_discarded")
+	MapManager.staged_field_ready.connect(_on_staged_field_ready)
+
 
 func _read_field_metadata() -> void:
 	## Read field generation parameters from lobby metadata.
@@ -361,6 +365,8 @@ func _disconnect_field_signals() -> void:
 		NetworkManager.gateway_config_rejected.disconnect(_on_gateway_config_rejected)
 	if NetworkManager.field_crdt_received.is_connected(_on_field_crdt_received):
 		NetworkManager.field_crdt_received.disconnect(_on_field_crdt_received)
+	if MapManager.staged_field_ready.is_connected(_on_staged_field_ready):
+		MapManager.staged_field_ready.disconnect(_on_staged_field_ready)
 
 
 # =============================================================================
@@ -657,6 +663,22 @@ func _on_gateway_travel_create_requested(
 		"Field %d" % _generation_seed,  # Pass current field name as origin
 		pearl_type
 	)
+
+
+func _on_staged_field_ready(_lobby_id: int) -> void:
+	## Handle staged field lobby creation for field-to-field travel.
+	## No gateway update or server report needed — just finish transition.
+
+	# Disconnect server_disconnected before intentional disconnect
+	# to prevent _return_to_menu() from destroying the staged lobby.
+	if multiplayer.server_disconnected.is_connected(
+		_on_server_disconnected
+	):
+		multiplayer.server_disconnected.disconnect(
+			_on_server_disconnected
+		)
+
+	MapManager.finish_staged_field_transition()
 
 
 func _on_gateway_config_cancelled() -> void:
