@@ -12,14 +12,13 @@ func before_each() -> void:
 # Helpers
 # =============================================================================
 
+
 func _make_removed(count: int = 2, seed_val: int = 42) -> Dictionary:
 	var removed: Dictionary = {}
 	for i: int in range(count):
 		var iid: String = "gen_%d_%d" % [seed_val, i]
 		removed[iid] = {
-			"field_lobby_id": 100,
-			"field_host_steam_id": 5000,
-			"timestamp": 1700000000 + i
+			"field_lobby_id": 100, "field_host_steam_id": 5000, "timestamp": 1700000000 + i
 		}
 	return removed
 
@@ -56,8 +55,17 @@ func _cache_default(
 	modifier: int = 0
 ) -> void:
 	_cache.cache_field(
-		lobby_id, seed_val, 200, 0, "Town", &"flame_pearl",
-		removed, placed, gw_versions, _make_gateways(), modifier
+		lobby_id,
+		seed_val,
+		200,
+		0,
+		"Town",
+		&"flame_pearl",
+		removed,
+		placed,
+		gw_versions,
+		_make_gateways(),
+		modifier
 	)
 
 
@@ -89,14 +97,12 @@ func _make_merge_data(
 # Basic CRUD
 # =============================================================================
 
+
 func test_cache_field_stores_crdt_state() -> void:
 	var removed: Dictionary = _make_removed()
 	var placed: Dictionary = _make_placed()
 	var gws: Array[Dictionary] = _make_gateways(2)
-	_cache.cache_field(
-		100, 42, 200, 0, "Town", &"flame_pearl",
-		removed, placed, [1, 0, 0, 0], gws
-	)
+	_cache.cache_field(100, 42, 200, 0, "Town", &"flame_pearl", removed, placed, [1, 0, 0, 0], gws)
 
 	var state: FieldStateCache.FieldState = _cache.get_cached_state(100)
 	assert_not_null(state, "State should be cached")
@@ -164,13 +170,18 @@ func test_cache_stores_deep_copy() -> void:
 # CRDT Merge: Set Union
 # =============================================================================
 
+
 func test_merge_unions_removed_items() -> void:
 	# Local has gen_42_0
-	var local_removed: Dictionary = {"gen_42_0": {"field_lobby_id": 100, "field_host_steam_id": 5000, "timestamp": 1}}
+	var local_removed: Dictionary = {
+		"gen_42_0": {"field_lobby_id": 100, "field_host_steam_id": 5000, "timestamp": 1}
+	}
 	_cache_default(100, 42, local_removed)
 
 	# Incoming has gen_42_1
-	var incoming_removed: Dictionary = {"gen_42_1": {"field_lobby_id": 200, "field_host_steam_id": 6000, "timestamp": 2}}
+	var incoming_removed: Dictionary = {
+		"gen_42_1": {"field_lobby_id": 200, "field_host_steam_id": 6000, "timestamp": 2}
+	}
 	var data: Dictionary = _make_merge_data(100, 42, incoming_removed)
 
 	@warning_ignore("return_value_discarded")
@@ -185,7 +196,8 @@ func test_merge_unions_removed_items() -> void:
 func test_merge_unions_placed_items() -> void:
 	# Local has one placed item
 	var local_placed: Dictionary = {
-		"placed_5000_1_0": {
+		"placed_5000_1_0":
+		{
 			"instance_id": "placed_5000_1_0",
 			"item_id": "flame_pearl",
 			"position": {"x": 1.0, "y": 0.0, "z": 0.0},
@@ -199,7 +211,8 @@ func test_merge_unions_placed_items() -> void:
 
 	# Incoming has a different placed item
 	var incoming_placed: Dictionary = {
-		"placed_6000_2_0": {
+		"placed_6000_2_0":
+		{
 			"instance_id": "placed_6000_2_0",
 			"item_id": "water_pearl",
 			"position": {"x": 3.0, "y": 0.0, "z": 0.0},
@@ -222,8 +235,12 @@ func test_merge_unions_placed_items() -> void:
 
 func test_merge_is_commutative() -> void:
 	# Merge(A, B) should equal Merge(B, A)
-	var removed_a: Dictionary = {"gen_42_0": {"field_lobby_id": 1, "field_host_steam_id": 1, "timestamp": 1}}
-	var removed_b: Dictionary = {"gen_42_1": {"field_lobby_id": 2, "field_host_steam_id": 2, "timestamp": 2}}
+	var removed_a: Dictionary = {
+		"gen_42_0": {"field_lobby_id": 1, "field_host_steam_id": 1, "timestamp": 1}
+	}
+	var removed_b: Dictionary = {
+		"gen_42_1": {"field_lobby_id": 2, "field_host_steam_id": 2, "timestamp": 2}
+	}
 
 	# Order 1: cache A, merge B
 	var cache1 := FieldStateCache.new()
@@ -249,7 +266,9 @@ func test_merge_is_commutative() -> void:
 
 func test_merge_is_idempotent() -> void:
 	# Merge(A, A) should equal A
-	var removed: Dictionary = {"gen_42_0": {"field_lobby_id": 1, "field_host_steam_id": 1, "timestamp": 1}}
+	var removed: Dictionary = {
+		"gen_42_0": {"field_lobby_id": 1, "field_host_steam_id": 1, "timestamp": 1}
+	}
 	_cache_default(100, 42, removed)
 
 	var data: Dictionary = _make_merge_data(100, 42, removed)
@@ -266,8 +285,15 @@ func test_merge_is_idempotent() -> void:
 func test_merge_gateway_higher_version_wins() -> void:
 	# Local has gateway_versions [1, 0, 0, 0]
 	_cache.cache_field(
-		100, 42, 0, 0, "", &"",
-		{}, {}, [1, 0, 3, 0],
+		100,
+		42,
+		0,
+		0,
+		"",
+		&"",
+		{},
+		{},
+		[1, 0, 3, 0],
 		[{"id": 0, "link_type": "field", "linked_lobby_id": 50}]
 	)
 
@@ -286,7 +312,9 @@ func test_merge_gateway_higher_version_wins() -> void:
 
 
 func test_merge_new_lobby_always_accepted() -> void:
-	var removed: Dictionary = {"gen_99_0": {"field_lobby_id": 1, "field_host_steam_id": 1, "timestamp": 1}}
+	var removed: Dictionary = {
+		"gen_99_0": {"field_lobby_id": 1, "field_host_steam_id": 1, "timestamp": 1}
+	}
 	var data: Dictionary = _make_merge_data(500, 99, removed)
 
 	var result: bool = _cache.merge_entry(data)
@@ -309,8 +337,12 @@ func test_merge_entry_always_returns_true() -> void:
 
 func test_merge_entries_batch() -> void:
 	var entries: Array = [
-		_make_merge_data(10, 1, {"gen_1_0": {"field_lobby_id": 0, "field_host_steam_id": 0, "timestamp": 0}}),
-		_make_merge_data(20, 2, {"gen_2_0": {"field_lobby_id": 0, "field_host_steam_id": 0, "timestamp": 0}})
+		_make_merge_data(
+			10, 1, {"gen_1_0": {"field_lobby_id": 0, "field_host_steam_id": 0, "timestamp": 0}}
+		),
+		_make_merge_data(
+			20, 2, {"gen_2_0": {"field_lobby_id": 0, "field_host_steam_id": 0, "timestamp": 0}}
+		)
 	]
 	_cache.merge_entries(entries)
 	assert_true(_cache.has_cached_state(10))
@@ -319,10 +351,14 @@ func test_merge_entries_batch() -> void:
 
 func test_merge_preserves_first_write_for_same_key() -> void:
 	# First-write wins: if local already has the key, incoming value is ignored
-	var local_removed: Dictionary = {"gen_42_0": {"field_lobby_id": 100, "field_host_steam_id": 5000, "timestamp": 1}}
+	var local_removed: Dictionary = {
+		"gen_42_0": {"field_lobby_id": 100, "field_host_steam_id": 5000, "timestamp": 1}
+	}
 	_cache_default(100, 42, local_removed)
 
-	var incoming_removed: Dictionary = {"gen_42_0": {"field_lobby_id": 999, "field_host_steam_id": 9999, "timestamp": 999}}
+	var incoming_removed: Dictionary = {
+		"gen_42_0": {"field_lobby_id": 999, "field_host_steam_id": 9999, "timestamp": 999}
+	}
 	var data: Dictionary = _make_merge_data(100, 42, incoming_removed)
 	@warning_ignore("return_value_discarded")
 	_cache.merge_entry(data)
@@ -335,6 +371,7 @@ func test_merge_preserves_first_write_for_same_key() -> void:
 # =============================================================================
 # Validation
 # =============================================================================
+
 
 func test_is_valid_instance_id_gen_format() -> void:
 	assert_true(FieldStateCache.is_valid_instance_id("gen_42_0"))
@@ -371,9 +408,7 @@ func test_is_valid_placed_entry_valid() -> void:
 func test_is_valid_placed_entry_rejects_missing_fields() -> void:
 	# Missing item_id
 	var entry: Dictionary = {
-		"instance_id": "placed_5000_1_0",
-		"position": {"x": 0.0, "y": 0.0, "z": 0.0},
-		"quantity": 1
+		"instance_id": "placed_5000_1_0", "position": {"x": 0.0, "y": 0.0, "z": 0.0}, "quantity": 1
 	}
 	assert_false(FieldStateCache.is_valid_placed_entry(entry))
 
@@ -411,8 +446,7 @@ func test_merge_rejects_invalid_instance_id() -> void:
 
 	var state: FieldStateCache.FieldState = _cache.get_cached_state(100)
 	assert_false(
-		state.removed_items.has("INVALID_KEY"),
-		"Invalid instance ID should be filtered out"
+		state.removed_items.has("INVALID_KEY"), "Invalid instance ID should be filtered out"
 	)
 	# push_warning is tracked as engine error in editor but not headless;
 	# mark any tracked errors as handled so neither environment fails.
@@ -425,7 +459,8 @@ func test_merge_rejects_invalid_placed_entry() -> void:
 
 	# Incoming placed item with out-of-bounds position
 	var invalid_placed: Dictionary = {
-		"placed_5000_1_0": {
+		"placed_5000_1_0":
+		{
 			"instance_id": "placed_5000_1_0",
 			"item_id": "water_pearl",
 			"position": {"x": 100.0, "y": 0.0, "z": 0.0},
@@ -438,8 +473,7 @@ func test_merge_rejects_invalid_placed_entry() -> void:
 
 	var state: FieldStateCache.FieldState = _cache.get_cached_state(100)
 	assert_false(
-		state.placed_items.has("placed_5000_1_0"),
-		"Out-of-bounds placement should be filtered"
+		state.placed_items.has("placed_5000_1_0"), "Out-of-bounds placement should be filtered"
 	)
 	# push_warning is tracked as engine error in editor but not headless;
 	# mark any tracked errors as handled so neither environment fails.
@@ -449,14 +483,12 @@ func test_merge_rejects_invalid_placed_entry() -> void:
 
 func test_action_metadata_preserved_through_roundtrip() -> void:
 	var removed: Dictionary = {
-		"gen_42_0": {
-			"field_lobby_id": 500,
-			"field_host_steam_id": 76561198012345678,
-			"timestamp": 1706745600
-		}
+		"gen_42_0":
+		{"field_lobby_id": 500, "field_host_steam_id": 76561198012345678, "timestamp": 1706745600}
 	}
 	var placed: Dictionary = {
-		"placed_765_1706745600_0": {
+		"placed_765_1706745600_0":
+		{
 			"instance_id": "placed_765_1706745600_0",
 			"item_id": "water_pearl",
 			"position": {"x": 5.0, "y": 0.0, "z": -3.0},
@@ -467,8 +499,17 @@ func test_action_metadata_preserved_through_roundtrip() -> void:
 		}
 	}
 	_cache.cache_field(
-		100, 42, 200, 0, "Town", &"flame_pearl",
-		removed, placed, [0, 0, 0, 0], _make_gateways(), 7777
+		100,
+		42,
+		200,
+		0,
+		"Town",
+		&"flame_pearl",
+		removed,
+		placed,
+		[0, 0, 0, 0],
+		_make_gateways(),
+		7777
 	)
 
 	# Serialize and merge into fresh cache
@@ -499,13 +540,13 @@ func test_action_metadata_preserved_through_roundtrip() -> void:
 # Serialization
 # =============================================================================
 
+
 func test_serialize_entry_roundtrip() -> void:
 	var removed: Dictionary = _make_removed(3)
 	var placed: Dictionary = _make_placed(2)
 	var gws: Array[Dictionary] = _make_gateways(2)
 	_cache.cache_field(
-		100, 42, 200, 1, "Origin", &"air_pearl",
-		removed, placed, [1, 2, 0, 0], gws, 7777
+		100, 42, 200, 1, "Origin", &"air_pearl", removed, placed, [1, 2, 0, 0], gws, 7777
 	)
 
 	var serialized: Dictionary = _cache.serialize_entry(100)
@@ -547,6 +588,7 @@ func test_serialize_entry_returns_empty_for_unknown_lobby() -> void:
 # =============================================================================
 # Orphan Cleanup
 # =============================================================================
+
 
 func test_cleanup_orphaned_fields_removes_unlinked() -> void:
 	_cache_default(100, 1)

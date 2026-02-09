@@ -83,9 +83,7 @@ func test_lobby_metadata_roundtrip() -> void:
 	assert_true(success, "Should successfully set metadata")
 
 	# Read it back
-	var value: String = LobbyManager.get_lobby_metadata(
-		LobbyManager.current_lobby_id, "test_key"
-	)
+	var value: String = LobbyManager.get_lobby_metadata(LobbyManager.current_lobby_id, "test_key")
 	assert_eq(value, "test_value", "Should read back the same value")
 
 	# Cleanup

@@ -1,10 +1,10 @@
 extends GutTest
 ## Tests for FieldCloudPersistence static parsing utilities.
 
-
 # =============================================================================
 # parse_position
 # =============================================================================
+
 
 func test_parse_position_from_vector3() -> void:
 	var input: Vector3 = Vector3(1.5, 2.0, -3.5)
@@ -45,6 +45,7 @@ func test_parse_position_from_invalid_type_returns_zero() -> void:
 # parse_steam_id
 # =============================================================================
 
+
 func test_parse_steam_id_from_string() -> void:
 	var result: int = FieldCloudPersistence.parse_steam_id("76561198012345678")
 	assert_eq(result, 76561198012345678, "Should parse string Steam ID")
@@ -73,6 +74,7 @@ func test_parse_steam_id_from_empty_string_returns_zero() -> void:
 # =============================================================================
 # parse_vector3_string
 # =============================================================================
+
 
 func test_parse_vector3_string_valid() -> void:
 	var result: Vector3 = FieldCloudPersistence.parse_vector3_string("(1, 2, 3)")

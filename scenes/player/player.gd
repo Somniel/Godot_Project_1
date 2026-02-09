@@ -65,7 +65,11 @@ func _input(event: InputEvent) -> void:
 		_camera.rotation.x = clamp(_camera.rotation.x, deg_to_rad(-80.0), deg_to_rad(80.0))
 
 	# Handle interact input (only when no UI is blocking)
-	if event.is_action_pressed("interact") and _current_interactable and is_instance_valid(_current_interactable):
+	if (
+		event.is_action_pressed("interact")
+		and _current_interactable
+		and is_instance_valid(_current_interactable)
+	):
 		if not UIManager.is_any_ui_blocking():
 			_current_interactable.interact(self)
 

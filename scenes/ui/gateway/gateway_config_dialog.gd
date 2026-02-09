@@ -16,12 +16,7 @@ signal cancelled
 enum Mode { CREATE_FIELD, LINK_TOWN }
 
 ## Pearl types that can be sacrificed
-const PEARL_TYPES: Array[StringName] = [
-	&"flame_pearl",
-	&"air_pearl",
-	&"life_pearl",
-	&"water_pearl"
-]
+const PEARL_TYPES: Array[StringName] = [&"flame_pearl", &"air_pearl", &"life_pearl", &"water_pearl"]
 
 ## Display names for pearls
 const PEARL_DISPLAY_NAMES: Dictionary = {
@@ -118,7 +113,9 @@ func _update_pearl_options() -> void:
 	for pearl_id: StringName in PEARL_TYPES:
 		if InventoryManager.has_item(pearl_id, 1):
 			var count: int = InventoryManager.get_item_count(pearl_id)
-			var display: String = "%s (x%d)" % [PEARL_DISPLAY_NAMES.get(pearl_id, str(pearl_id)), count]
+			var display: String = (
+				"%s (x%d)" % [PEARL_DISPLAY_NAMES.get(pearl_id, str(pearl_id)), count]
+			)
 			_pearl_option.add_item(display)
 			_available_pearls.append(pearl_id)
 
@@ -213,9 +210,11 @@ func _on_inventory_changed() -> void:
 # Town Link Mode (for field gateways)
 # =============================================================================
 
+
 ## Show the dialog for configuring a field gateway (includes town link option)
-func show_for_field_gateway(gateway_id: int, direction: String,
-							town_gateways: Array[Dictionary]) -> void:
+func show_for_field_gateway(
+	gateway_id: int, direction: String, town_gateways: Array[Dictionary]
+) -> void:
 	_gateway_id = gateway_id
 	_gateway_direction = direction
 	_town_gateways = town_gateways
@@ -350,7 +349,9 @@ func _update_town_gateway_options() -> void:
 
 	for i: int in range(_town_gateways.size()):
 		var gw_data: Dictionary = _town_gateways[i]
-		var direction: String = DIRECTION_NAMES[i] if i < DIRECTION_NAMES.size() else "Gateway %d" % i
+		var direction: String = (
+			DIRECTION_NAMES[i] if i < DIRECTION_NAMES.size() else "Gateway %d" % i
+		)
 		var has_link: bool = gw_data.get("has_link", false)
 		var linked_name: String = gw_data.get("linked_map_name", "")
 

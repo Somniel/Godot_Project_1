@@ -6,10 +6,10 @@ extends RefCounted
 ## The caller (field.gd) is responsible for spawning items and configuring gateways
 ## from the data returned by load_from_town_cloud().
 
-
 # =============================================================================
 # Position Parsing Utilities
 # =============================================================================
+
 
 static func parse_position(pos_variant: Variant) -> Vector3:
 	## Parse position from serialized data (handles Vector3, Dictionary, or String).
@@ -21,11 +21,7 @@ static func parse_position(pos_variant: Variant) -> Vector3:
 		var pos_dict: Dictionary = pos_variant as Dictionary
 		# Dictionary.get() returns Variant; values are provably numeric
 		@warning_ignore("unsafe_call_argument")
-		return Vector3(
-			pos_dict.get("x", 0.0),
-			pos_dict.get("y", 0.0),
-			pos_dict.get("z", 0.0)
-		)
+		return Vector3(pos_dict.get("x", 0.0), pos_dict.get("y", 0.0), pos_dict.get("z", 0.0))
 	elif pos_variant is String:
 		@warning_ignore("unsafe_cast")
 		var pos_str: String = pos_variant as String
@@ -69,6 +65,7 @@ static func parse_vector3_string(s: String) -> Vector3:
 # Serialization
 # =============================================================================
 
+
 func serialize_items(item_spawn_target: Node) -> Array[Dictionary]:
 	## Serialize all WorldItem children of the given node.
 	var items: Array[Dictionary] = []
@@ -80,12 +77,14 @@ func serialize_items(item_spawn_target: Node) -> Array[Dictionary]:
 		if child is WorldItem:
 			var item: WorldItem = child as WorldItem
 			var pos: Vector3 = item.get_ground_position()
-			items.append({
-				"item_id": str(item.item_id),
-				"instance_id": item.instance_id,
-				"position": {"x": pos.x, "y": pos.y, "z": pos.z},
-				"quantity": item.quantity
-			})
+			items.append(
+				{
+					"item_id": str(item.item_id),
+					"instance_id": item.instance_id,
+					"position": {"x": pos.x, "y": pos.y, "z": pos.z},
+					"quantity": item.quantity
+				}
+			)
 
 	return items
 
@@ -103,18 +102,23 @@ func serialize_gateways(gateways: Array[Gateway]) -> Array[Dictionary]:
 			Gateway.LinkType.TOWN:
 				link_type_str = "town"
 
-		gateways_data.append({
-			"id": gateway.gateway_id,
-			"link_type": link_type_str,
-			"linked_lobby_id": gateway.linked_lobby_id,
-			"linked_map_name": gateway.linked_map_name,
-			"generation_seed": gateway.generation_seed,
-			"pearl_type": String(gateway.pearl_type),
-			"is_origin_gateway": gateway.is_origin_gateway,
-			"linked_gateway_id": gateway.linked_gateway_id,
-			# Store as string to preserve precision for large Steam IDs
-			"linked_owner_steam_id": str(gateway.linked_owner_steam_id)
-		})
+		(
+			gateways_data
+			. append(
+				{
+					"id": gateway.gateway_id,
+					"link_type": link_type_str,
+					"linked_lobby_id": gateway.linked_lobby_id,
+					"linked_map_name": gateway.linked_map_name,
+					"generation_seed": gateway.generation_seed,
+					"pearl_type": String(gateway.pearl_type),
+					"is_origin_gateway": gateway.is_origin_gateway,
+					"linked_gateway_id": gateway.linked_gateway_id,
+					# Store as string to preserve precision for large Steam IDs
+					"linked_owner_steam_id": str(gateway.linked_owner_steam_id)
+				}
+			)
+		)
 
 	return gateways_data
 
@@ -122,6 +126,7 @@ func serialize_gateways(gateways: Array[Gateway]) -> Array[Dictionary]:
 # =============================================================================
 # Cloud Save/Load
 # =============================================================================
+
 
 func save_to_town_cloud(
 	generation_seed: int,
@@ -139,17 +144,24 @@ func save_to_town_cloud(
 
 	var storage: TownCloudStorage = MapManager.ensure_town_storage_loaded()
 	storage.set_linked_field(
-		generation_seed, pearl_type, removed_items, placed_items,
-		gateway_versions, gateways, SteamManager.get_steam_id()
+		generation_seed,
+		pearl_type,
+		removed_items,
+		placed_items,
+		gateway_versions,
+		gateways,
+		SteamManager.get_steam_id()
 	)
 	storage.flush()
 
 	print(
-		("FieldCloudPersistence: Saved CRDT to town cloud "
-		+ "(seed %d, %d removed, %d placed, %d gateways)") % [
-			generation_seed, removed_items.size(),
-			placed_items.size(), gateways.size()
-		]
+		(
+			(
+				"FieldCloudPersistence: Saved CRDT to town cloud "
+				+ "(seed %d, %d removed, %d placed, %d gateways)"
+			)
+			% [generation_seed, removed_items.size(), placed_items.size(), gateways.size()]
+		)
 	)
 	return true
 
@@ -167,16 +179,14 @@ func load_from_town_cloud(generation_seed: int) -> Variant:
 	if field_data == null:
 		return null
 
-	print(
-		"FieldCloudPersistence: Loaded state for seed %d from town cloud"
-		% generation_seed
-	)
+	print("FieldCloudPersistence: Loaded state for seed %d from town cloud" % generation_seed)
 	return field_data
 
 
 # =============================================================================
 # Snapshot-to-CRDT Migration
 # =============================================================================
+
 
 static func migrate_snapshot_to_crdt(
 	data: Dictionary, generation_seed: int, pearl_type: StringName
@@ -189,9 +199,7 @@ static func migrate_snapshot_to_crdt(
 	var gateway_versions: Array[int] = [0, 0, 0, 0]
 
 	# Regenerate canonical items from seed
-	var generator := ProceduralFieldGenerator.new(
-		generation_seed, pearl_type
-	)
+	var generator := ProceduralFieldGenerator.new(generation_seed, pearl_type)
 	var canonical_items: Array[Dictionary] = generator.generate_items()
 
 	# Build a lookup of saved items by rounded position
@@ -199,13 +207,11 @@ static func migrate_snapshot_to_crdt(
 	var saved_items_variant: Variant = data.get("items", [])
 	if saved_items_variant is Array:
 		@warning_ignore("unsafe_cast")
-		for item: Variant in (saved_items_variant as Array):
+		for item: Variant in saved_items_variant as Array:
 			if item is Dictionary:
 				@warning_ignore("unsafe_cast")
 				var item_dict: Dictionary = item as Dictionary
-				var pos: Vector3 = parse_position(
-					item_dict.get("position", Vector3.ZERO)
-				)
+				var pos: Vector3 = parse_position(item_dict.get("position", Vector3.ZERO))
 				var key: String = _round_pos_key(pos)
 				if not saved_by_pos.has(key):
 					saved_by_pos[key] = []
@@ -225,9 +231,7 @@ static func migrate_snapshot_to_crdt(
 			var candidates: Array = saved_by_pos[key]
 			for j: int in range(candidates.size()):
 				var saved: Dictionary = candidates[j]
-				if str(saved.get("item_id", "")) == str(
-					canonical.get("item_id", "")
-				):
+				if str(saved.get("item_id", "")) == str(canonical.get("item_id", "")):
 					found = true
 					candidates.remove_at(j)
 					if candidates.is_empty():
@@ -238,9 +242,7 @@ static func migrate_snapshot_to_crdt(
 		if not found:
 			# Canonical item not in save → it was removed
 			removed_items[instance_id] = {
-				"field_lobby_id": 0,
-				"field_host_steam_id": 0,
-				"timestamp": 0
+				"field_lobby_id": 0, "field_host_steam_id": 0, "timestamp": 0
 			}
 
 	# Remaining saved items not matched to canonical → they were placed
@@ -248,13 +250,9 @@ static func migrate_snapshot_to_crdt(
 	for key: String in saved_by_pos:
 		var remaining: Array = saved_by_pos[key]
 		for item: Dictionary in remaining:
-			var iid: String = "migrated_%d_%d" % [
-				generation_seed, placed_counter
-			]
+			var iid: String = "migrated_%d_%d" % [generation_seed, placed_counter]
 			placed_counter += 1
-			var pos: Vector3 = parse_position(
-				item.get("position", Vector3.ZERO)
-			)
+			var pos: Vector3 = parse_position(item.get("position", Vector3.ZERO))
 			placed_items[iid] = {
 				"instance_id": iid,
 				"item_id": str(item.get("item_id", "")),
@@ -270,7 +268,7 @@ static func migrate_snapshot_to_crdt(
 	var gw_data: Variant = data.get("gateways", [])
 	if gw_data is Array:
 		@warning_ignore("unsafe_cast")
-		for gw: Variant in (gw_data as Array):
+		for gw: Variant in gw_data as Array:
 			if gw is Dictionary:
 				@warning_ignore("unsafe_cast")
 				gateways.append((gw as Dictionary).duplicate())

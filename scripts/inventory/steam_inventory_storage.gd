@@ -11,7 +11,7 @@ extends InventoryStorage
 ## Maps our StringName IDs to Steam's numeric item definition IDs.
 ## Configure these in Steamworks partner portal first.
 const ITEM_DEF_IDS: Dictionary = {
-	&"air_pearl": 1001,    # Update with actual Steam item def IDs
+	&"air_pearl": 1001,  # Update with actual Steam item def IDs
 	&"flame_pearl": 1002,
 }
 
@@ -99,6 +99,7 @@ func flush() -> void:
 # Steam Inventory Callbacks (implement when ready)
 # =============================================================================
 
+
 func _on_inventory_result_ready(_result_handle: int, _result: int) -> void:
 	# Called when Steam returns inventory data
 	#
@@ -116,6 +117,7 @@ func _on_inventory_result_ready(_result_handle: int, _result: int) -> void:
 # =============================================================================
 # Item Operations (call these instead of direct slot manipulation)
 # =============================================================================
+
 
 func grant_item(_item_id: StringName, _quantity: int) -> void:
 	## Request Steam to grant an item to the player.

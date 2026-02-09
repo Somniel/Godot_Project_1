@@ -31,11 +31,9 @@ static func _parse_linked_lobby_id(gw_dict: Dictionary) -> int:
 # Gateway Linking
 # =============================================================================
 
+
 func update_town_gateway_to_link_here(
-	town_gateway_id: int,
-	field_gateway_id: int,
-	generation_seed: int,
-	pearl_type: StringName
+	town_gateway_id: int, field_gateway_id: int, generation_seed: int, pearl_type: StringName
 ) -> void:
 	## Update the player's town save to link specified gateway to this field.
 	## field_gateway_id specifies which field gateway the town gateway connects to.
@@ -54,15 +52,16 @@ func update_town_gateway_to_link_here(
 	)
 	storage.flush()
 
-	print("FieldTownLinker: Updated town gateway %d -> field gateway %d (lobby %d)" % [
-		town_gateway_id, field_gateway_id, LobbyManager.current_lobby_id
-	])
+	print(
+		(
+			"FieldTownLinker: Updated town gateway %d -> field gateway %d (lobby %d)"
+			% [town_gateway_id, field_gateway_id, LobbyManager.current_lobby_id]
+		)
+	)
 
 
 func restore_town_gateway_links(
-	gateways: Array[Gateway],
-	generation_seed: int,
-	origin_map_name: String
+	gateways: Array[Gateway], generation_seed: int, origin_map_name: String
 ) -> int:
 	## Restore field->town links from town cloud gateway data.
 	## Town gateways store which field gateway they connect to via linked_gateway_id.
@@ -98,9 +97,12 @@ func restore_town_gateway_links(
 		# Create town link on this field gateway back to town gateway i
 		field_gateway.set_town_link(owner_steam_id, current_town_lobby, town_name, i)
 		links_created += 1
-		print("FieldTownLinker: Restored town link: field gateway %d -> town gateway %d" % [
-			field_gw_id, i
-		])
+		print(
+			(
+				"FieldTownLinker: Restored town link: field gateway %d -> town gateway %d"
+				% [field_gw_id, i]
+			)
+		)
 
 	if links_created > 0:
 		print("FieldTownLinker: Restored %d town gateway links from town cloud" % links_created)
@@ -109,9 +111,7 @@ func restore_town_gateway_links(
 
 
 func update_all_town_gateways_for_field(
-	gateways: Array[Gateway],
-	generation_seed: int,
-	origin_map_name: String
+	gateways: Array[Gateway], generation_seed: int, origin_map_name: String
 ) -> void:
 	## Update all town gateways that link to this field with the current lobby ID.
 	## Also auto-assigns unconfigured field gateways to town gateways that don't
@@ -151,13 +151,14 @@ func update_all_town_gateways_for_field(
 				# Town cloud has a stored value - use it if field gateway is available
 				var stored_gw: Gateway = gateways[existing_linked_gw]
 				if not stored_gw.is_origin_gateway and not stored_gw.has_link():
-					stored_gw.set_town_link(
-						owner_steam_id, current_town_lobby, town_name, i
-					)
+					stored_gw.set_town_link(owner_steam_id, current_town_lobby, town_name, i)
 					field_gateway_id = existing_linked_gw
-					print("FieldTownLinker: Restored auto-link: field gw %d -> town gw %d" % [
-						field_gateway_id, i
-					])
+					print(
+						(
+							"FieldTownLinker: Restored auto-link: field gw %d -> town gw %d"
+							% [field_gateway_id, i]
+						)
+					)
 			if field_gateway_id < 0:
 				# No stored value or stored gateway was taken - find any available
 				var available_gw: int = find_unconfigured_field_gateway(gateways)
@@ -166,30 +167,40 @@ func update_all_town_gateways_for_field(
 						owner_steam_id, current_town_lobby, town_name, i
 					)
 					field_gateway_id = available_gw
-					print("FieldTownLinker: Auto-assigned field gw %d -> town gw %d" % [
-						field_gateway_id, i
-					])
+					print(
+						(
+							"FieldTownLinker: Auto-assigned field gw %d -> town gw %d"
+							% [field_gateway_id, i]
+						)
+					)
 
 		# Check if update is needed (lobby ID changed or linked_gateway_id changed)
-		var needs_update: bool = (linked_id != current_lobby_id) or \
-			(field_gateway_id >= 0 and existing_linked_gw != field_gateway_id)
+		var needs_update: bool = (
+			(linked_id != current_lobby_id)
+			or (field_gateway_id >= 0 and existing_linked_gw != field_gateway_id)
+		)
 		if not needs_update:
 			continue
 
 		# Update this gateway with the current field lobby ID and linked_gateway_id
 		if linked_id == 0:
-			print("FieldTownLinker: Setting town gw %d -> field gw %d (lobby %d, first)" % [
-				i, field_gateway_id, current_lobby_id
-			])
+			print(
+				(
+					"FieldTownLinker: Setting town gw %d -> field gw %d (lobby %d, first)"
+					% [i, field_gateway_id, current_lobby_id]
+				)
+			)
 		else:
-			print("FieldTownLinker: Updating town gw %d -> field gw %d (lobby %d)" % [
-				i, field_gateway_id, current_lobby_id
-			])
+			print(
+				(
+					"FieldTownLinker: Updating town gw %d -> field gw %d (lobby %d)"
+					% [i, field_gateway_id, current_lobby_id]
+				)
+			)
 
 		# Preserve existing linked_gateway_id if we couldn't find the
 		# matching field gateway (avoids corrupting cloud data)
-		var effective_gw_id: int = field_gateway_id if field_gateway_id >= 0 \
-			else existing_linked_gw
+		var effective_gw_id: int = field_gateway_id if field_gateway_id >= 0 else existing_linked_gw
 		var map_name: String = gw_dict.get("linked_map_name", "Field %d" % generation_seed)
 		storage.set_gateway_link(i, current_lobby_id, map_name, effective_gw_id)
 		modified = true
@@ -199,10 +210,7 @@ func update_all_town_gateways_for_field(
 		print("FieldTownLinker: Updated town gateways with field lobby ID %d" % current_lobby_id)
 
 
-func find_field_gateway_for_town_gateway(
-	gateways: Array[Gateway],
-	town_gateway_id: int
-) -> int:
+func find_field_gateway_for_town_gateway(gateways: Array[Gateway], town_gateway_id: int) -> int:
 	## Find which field gateway connects to a given town gateway.
 	## Returns the field gateway ID, or -1 if not found.
 	var my_steam_id: int = SteamManager.get_steam_id()

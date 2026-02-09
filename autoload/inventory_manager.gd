@@ -38,10 +38,10 @@ var _is_loaded: bool = false
 ## Storage backend for persistence
 var _storage: InventoryStorage = null
 
-
 # =============================================================================
 # Dictionary Helper Functions
 # =============================================================================
+
 
 static func get_slot_item_id(slot: Dictionary) -> StringName:
 	## Safely extract item_id from slot dictionary.
@@ -70,6 +70,7 @@ static func _get_slot_quantity(slot: Dictionary) -> int:
 # =============================================================================
 # Lifecycle
 # =============================================================================
+
 
 func _ready() -> void:
 	_initialize_empty_inventory()
@@ -164,6 +165,7 @@ func _queue_save() -> void:
 # Item Registry
 # =============================================================================
 
+
 ## Register an item definition for use in inventory
 func register_item(data: ItemData) -> void:
 	if data == null or data.id == &"":
@@ -180,6 +182,7 @@ func get_item_data(item_id: StringName) -> ItemData:
 # =============================================================================
 # Slot Access
 # =============================================================================
+
 
 ## Get slot data at index. Returns {item_id, quantity} or empty dict
 func get_slot(index: int) -> Dictionary:
@@ -246,6 +249,7 @@ func find_slot_with_space(item_id: StringName) -> int:
 # =============================================================================
 # Item Manipulation
 # =============================================================================
+
 
 ## Add item to inventory. Returns overflow quantity (0 if all added)
 func add_item(item_id: StringName, quantity: int = 1) -> int:

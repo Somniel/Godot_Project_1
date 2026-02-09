@@ -3,7 +3,6 @@ extends GutTest
 ## Tests serialization, deserialization, migration, and helper functions.
 ## Steam-dependent methods are tested for offline behavior only.
 
-
 var _storage: SteamCloudStorage = null
 var _timer_parent: Node = null
 
@@ -25,6 +24,7 @@ func after_each() -> void:
 # Initialization Tests
 # =============================================================================
 
+
 func test_initial_slots_are_empty() -> void:
 	var slots: Array[Dictionary] = _storage.get_slots()
 	assert_eq(slots.size(), InventoryStorage.INVENTORY_SIZE, "Should have correct number of slots")
@@ -39,6 +39,7 @@ func test_inventory_size_constant() -> void:
 # =============================================================================
 # get_slots Tests
 # =============================================================================
+
 
 func test_get_slots_returns_copy() -> void:
 	# Set up some data
@@ -65,6 +66,7 @@ func test_get_slots_returns_slot_copies() -> void:
 # =============================================================================
 # save_inventory Tests
 # =============================================================================
+
 
 func test_save_inventory_stores_slots() -> void:
 	var test_slots: Array[Dictionary] = []
@@ -102,14 +104,12 @@ func test_save_inventory_makes_copy() -> void:
 # _load_from_dict Tests
 # =============================================================================
 
+
 func test_load_from_dict_parses_valid_data() -> void:
 	var data: Dictionary = {
 		"version": 2,
-		"slots": [
-			{"item_id": "air_pearl", "quantity": 5},
-			null,
-			{"item_id": "flame_pearl", "quantity": 3}
-		]
+		"slots":
+		[{"item_id": "air_pearl", "quantity": 5}, null, {"item_id": "flame_pearl", "quantity": 3}]
 	}
 
 	_storage._load_from_dict(data)
@@ -124,8 +124,7 @@ func test_load_from_dict_parses_valid_data() -> void:
 
 func test_load_from_dict_handles_null_slots() -> void:
 	var data: Dictionary = {
-		"version": 2,
-		"slots": [null, null, {"item_id": "test", "quantity": 1}, null]
+		"version": 2, "slots": [null, null, {"item_id": "test", "quantity": 1}, null]
 	}
 
 	_storage._load_from_dict(data)
@@ -138,10 +137,7 @@ func test_load_from_dict_handles_null_slots() -> void:
 
 
 func test_load_from_dict_handles_empty_slots_array() -> void:
-	var data: Dictionary = {
-		"version": 2,
-		"slots": []
-	}
+	var data: Dictionary = {"version": 2, "slots": []}
 
 	_storage._load_from_dict(data)
 
@@ -152,9 +148,7 @@ func test_load_from_dict_handles_empty_slots_array() -> void:
 
 
 func test_load_from_dict_handles_missing_slots_key() -> void:
-	var data: Dictionary = {
-		"version": 2
-	}
+	var data: Dictionary = {"version": 2}
 
 	_storage._load_from_dict(data)
 
@@ -165,10 +159,11 @@ func test_load_from_dict_handles_missing_slots_key() -> void:
 func test_load_from_dict_ignores_invalid_quantity() -> void:
 	var data: Dictionary = {
 		"version": 2,
-		"slots": [
-			{"item_id": "test", "quantity": 0},   # Zero quantity
+		"slots":
+		[
+			{"item_id": "test", "quantity": 0},  # Zero quantity
 			{"item_id": "test", "quantity": -5},  # Negative quantity
-			{"item_id": "test", "quantity": 5}    # Valid
+			{"item_id": "test", "quantity": 5}  # Valid
 		]
 	}
 
@@ -182,11 +177,7 @@ func test_load_from_dict_ignores_invalid_quantity() -> void:
 
 func test_load_from_dict_ignores_empty_item_id() -> void:
 	var data: Dictionary = {
-		"version": 2,
-		"slots": [
-			{"item_id": "", "quantity": 5},
-			{"item_id": "valid", "quantity": 5}
-		]
+		"version": 2, "slots": [{"item_id": "", "quantity": 5}, {"item_id": "valid", "quantity": 5}]
 	}
 
 	_storage._load_from_dict(data)
@@ -202,10 +193,7 @@ func test_load_from_dict_truncates_to_inventory_size() -> void:
 	for i: int in range(50):  # More than 25
 		slots_data.append({"item_id": "item_%d" % i, "quantity": 1})
 
-	var data: Dictionary = {
-		"version": 2,
-		"slots": slots_data
-	}
+	var data: Dictionary = {"version": 2, "slots": slots_data}
 
 	_storage._load_from_dict(data)
 
@@ -216,6 +204,7 @@ func test_load_from_dict_truncates_to_inventory_size() -> void:
 # =============================================================================
 # Migration Tests
 # =============================================================================
+
 
 func test_migrate_item_id_converts_old_ids() -> void:
 	var old_id: StringName = &"pearl"
@@ -240,12 +229,7 @@ func test_migrate_item_id_preserves_current_ids() -> void:
 
 func test_load_from_dict_applies_migration() -> void:
 	# Version 1 data with old "pearl" item ID
-	var data: Dictionary = {
-		"version": 1,
-		"slots": [
-			{"item_id": "pearl", "quantity": 10}
-		]
-	}
+	var data: Dictionary = {"version": 1, "slots": [{"item_id": "pearl", "quantity": 10}]}
 
 	_storage._load_from_dict(data)
 
@@ -258,9 +242,7 @@ func test_load_from_dict_skips_migration_for_current_version() -> void:
 	# Current version data - should not attempt migration
 	var data: Dictionary = {
 		"version": SteamCloudStorage.SAVE_VERSION,
-		"slots": [
-			{"item_id": "air_pearl", "quantity": 5}
-		]
+		"slots": [{"item_id": "air_pearl", "quantity": 5}]
 	}
 
 	_storage._load_from_dict(data)
@@ -284,6 +266,7 @@ func test_migration_table_exists() -> void:
 # =============================================================================
 # Helper Function Tests: _get_slot_item_id
 # =============================================================================
+
 
 func test_get_slot_item_id_handles_stringname() -> void:
 	var slot: Dictionary = {"item_id": &"test_item", "quantity": 5}
@@ -324,6 +307,7 @@ func test_get_slot_item_id_handles_invalid_type() -> void:
 # Helper Function Tests: _get_slot_quantity
 # =============================================================================
 
+
 func test_get_slot_quantity_handles_int() -> void:
 	var slot: Dictionary = {"item_id": &"test", "quantity": 42}
 	var result: int = SteamCloudStorage._get_slot_quantity(slot)
@@ -362,6 +346,7 @@ func test_get_slot_quantity_handles_invalid_type() -> void:
 # =============================================================================
 # Helper Function Tests: _extract_file_buffer
 # =============================================================================
+
 
 func test_extract_file_buffer_handles_packed_byte_array() -> void:
 	var input: PackedByteArray = PackedByteArray([72, 101, 108, 108, 111])  # "Hello"
@@ -427,6 +412,7 @@ func test_extract_file_buffer_handles_invalid_type() -> void:
 # Offline Behavior Tests
 # =============================================================================
 
+
 func test_load_inventory_without_steam_emits_success() -> void:
 	# Skip if Steam is actually initialized
 	if SteamManager.is_steam_initialized:
@@ -457,8 +443,11 @@ func test_load_inventory_without_steam_initializes_empty() -> void:
 # Constants Tests
 # =============================================================================
 
+
 func test_cloud_file_name_constant() -> void:
-	assert_eq(SteamCloudStorage.CLOUD_FILE_NAME, "inventory.json", "Cloud file name should be correct")
+	assert_eq(
+		SteamCloudStorage.CLOUD_FILE_NAME, "inventory.json", "Cloud file name should be correct"
+	)
 
 
 func test_save_version_constant() -> void:

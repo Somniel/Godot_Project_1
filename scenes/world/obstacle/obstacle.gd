@@ -22,10 +22,7 @@ func _ready() -> void:
 ## Configure the obstacle type and visual properties.
 ## If custom_color is provided, it overrides the default color for this obstacle type.
 func setup(
-	type_name: String,
-	scale_factor: float,
-	rotation_y_deg: float,
-	custom_color: Color = Color.WHITE
+	type_name: String, scale_factor: float, rotation_y_deg: float, custom_color: Color = Color.WHITE
 ) -> void:
 	match type_name:
 		"rock":

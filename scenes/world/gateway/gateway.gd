@@ -11,7 +11,9 @@ enum LinkType { NONE, FIELD, TOWN }
 signal travel_requested(player: Node3D, destination_lobby_id: int)
 
 ## Emitted when a player travels and the field needs to be created first
-signal travel_create_requested(player: Node3D, generation_seed: int, field_name: String, pearl_type: StringName)
+signal travel_create_requested(
+	player: Node3D, generation_seed: int, field_name: String, pearl_type: StringName
+)
 
 ## Emitted when a player wants to configure this gateway
 signal configure_requested(player: Node3D)
@@ -90,8 +92,9 @@ func set_link(lobby_id: int, map_name: String, target_gateway_id: int = -1) -> v
 
 
 ## Set the gateway link to a player's town (only used by field gateways)
-func set_town_link(owner_steam_id: int, lobby_id: int, map_name: String,
-				   target_gateway_id: int = -1) -> void:
+func set_town_link(
+	owner_steam_id: int, lobby_id: int, map_name: String, target_gateway_id: int = -1
+) -> void:
 	link_type = LinkType.TOWN
 	linked_owner_steam_id = owner_steam_id
 	linked_lobby_id = lobby_id  # Cached, may be stale
@@ -155,11 +158,16 @@ func needs_lobby_lookup() -> bool:
 ## Get the direction name for this gateway
 func get_direction_name() -> String:
 	match gateway_id:
-		0: return "North"
-		1: return "East"
-		2: return "South"
-		3: return "West"
-		_: return "Gateway"
+		0:
+			return "North"
+		1:
+			return "East"
+		2:
+			return "South"
+		3:
+			return "West"
+		_:
+			return "Gateway"
 
 
 func _update_visual_state() -> void:

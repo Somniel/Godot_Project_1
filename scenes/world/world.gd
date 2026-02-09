@@ -220,6 +220,7 @@ func _exit_tree() -> void:
 # Item Spawning
 # =============================================================================
 
+
 func _spawn_initial_items() -> void:
 	## Server-only: Spawns initial test items in the world.
 	if not multiplayer.is_server():
@@ -247,11 +248,7 @@ func _spawn_item_at(item_id: StringName, pos: Vector3, quantity: int = 1) -> voi
 	if not multiplayer.is_server():
 		return
 
-	var spawn_data: Dictionary = {
-		"item_id": str(item_id),
-		"position": pos,
-		"quantity": quantity
-	}
+	var spawn_data: Dictionary = {"item_id": str(item_id), "position": pos, "quantity": quantity}
 	@warning_ignore("return_value_discarded")
 	_item_spawner.spawn(spawn_data)
 
@@ -337,7 +334,9 @@ func _process_pickup(peer_id: int, item_path: String) -> void:
 
 	var distance: float = player_node.global_position.distance_to(world_item.global_position)
 	if distance > PICKUP_RANGE:
-		print("World: Pickup request failed - player too far: %.1f > %.1f" % [distance, PICKUP_RANGE])
+		print(
+			"World: Pickup request failed - player too far: %.1f > %.1f" % [distance, PICKUP_RANGE]
+		)
 		return
 
 	# Pickup is valid - get item info before destroying

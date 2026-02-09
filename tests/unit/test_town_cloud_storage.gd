@@ -33,6 +33,7 @@ func _cancel_pending_save() -> void:
 # Initial State
 # =============================================================================
 
+
 func test_new_storage_is_new_town() -> void:
 	assert_true(_storage.is_new_town(), "Should be new town without Steam")
 
@@ -56,6 +57,7 @@ func test_new_storage_has_4_default_gateways() -> void:
 # Town Name
 # =============================================================================
 
+
 func test_set_town_name_and_get() -> void:
 	_storage.set_town_name("My Town")
 	assert_eq(_storage.get_town_name(), "My Town")
@@ -70,6 +72,7 @@ func test_set_empty_town_name() -> void:
 # =============================================================================
 # Gateway CRUD
 # =============================================================================
+
 
 func test_set_gateway_config_stores_seed_and_pearl() -> void:
 	_storage.set_gateway_config(0, 12345, "Flame Field", &"flame_pearl")
@@ -150,12 +153,14 @@ func test_set_gateway_link_preserves_linked_gateway_id() -> void:
 # Linked Fields (CRDT format)
 # =============================================================================
 
+
 func test_set_linked_field_crdt_and_get() -> void:
 	var removed: Dictionary = {
 		"gen_42_0": {"field_lobby_id": 100, "field_host_steam_id": 5000, "timestamp": 1}
 	}
 	var placed: Dictionary = {
-		"placed_5000_1_0": {
+		"placed_5000_1_0":
+		{
 			"instance_id": "placed_5000_1_0",
 			"item_id": "flame_pearl",
 			"position": {"x": 1.0, "y": 0.0, "z": 0.0},
@@ -213,9 +218,7 @@ func test_remove_linked_field() -> void:
 
 
 func test_set_linked_field_stores_modifier() -> void:
-	_storage.set_linked_field(
-		70, &"water_pearl", {}, {}, [0, 0, 0, 0], [], 76561198012345678
-	)
+	_storage.set_linked_field(70, &"water_pearl", {}, {}, [0, 0, 0, 0], [], 76561198012345678)
 	var data: Dictionary = _storage.get_linked_field(70)
 	assert_eq(data["last_modified_by"], 76561198012345678)
 
@@ -223,6 +226,7 @@ func test_set_linked_field_stores_modifier() -> void:
 # =============================================================================
 # CRDT Merge (merge_linked_field)
 # =============================================================================
+
 
 func test_merge_linked_field_unions_removed() -> void:
 	# Store initial state with one removal
@@ -247,7 +251,8 @@ func test_merge_linked_field_unions_removed() -> void:
 func test_merge_linked_field_unions_placed() -> void:
 	# Store initial state with one placed item
 	var initial_placed: Dictionary = {
-		"placed_5000_1_0": {
+		"placed_5000_1_0":
+		{
 			"instance_id": "placed_5000_1_0",
 			"item_id": "flame_pearl",
 			"position": {"x": 1.0, "y": 0.0, "z": 0.0},
@@ -258,7 +263,8 @@ func test_merge_linked_field_unions_placed() -> void:
 
 	# Merge incoming with a different placed item
 	var incoming_placed: Dictionary = {
-		"placed_6000_2_0": {
+		"placed_6000_2_0":
+		{
 			"instance_id": "placed_6000_2_0",
 			"item_id": "water_pearl",
 			"position": {"x": 3.0, "y": 0.0, "z": 0.0},
@@ -325,9 +331,7 @@ func test_get_linked_field_migrates_old_format() -> void:
 	# Inject old-format data directly (no format_version, has "items" array)
 	# This simulates reading a save from before the CRDT migration
 	var old_data: Dictionary = {
-		"pearl_type": "flame_pearl",
-		"items": [],
-		"gateways": [{"id": 0, "link_type": "none"}]
+		"pearl_type": "flame_pearl", "items": [], "gateways": [{"id": 0, "link_type": "none"}]
 	}
 	@warning_ignore("unsafe_cast")
 	var linked_fields: Dictionary = _storage._state["linked_fields"] as Dictionary
@@ -346,11 +350,7 @@ func test_get_linked_field_migrates_old_format() -> void:
 
 func test_merge_auto_migrates_old_format() -> void:
 	# Inject old-format data
-	var old_data: Dictionary = {
-		"pearl_type": "flame_pearl",
-		"items": [],
-		"gateways": []
-	}
+	var old_data: Dictionary = {"pearl_type": "flame_pearl", "items": [], "gateways": []}
 	@warning_ignore("unsafe_cast")
 	var linked_fields: Dictionary = _storage._state["linked_fields"] as Dictionary
 	linked_fields["42"] = old_data
@@ -369,6 +369,7 @@ func test_merge_auto_migrates_old_format() -> void:
 # =============================================================================
 # Orphan Cleanup
 # =============================================================================
+
 
 func test_cleanup_orphaned_linked_fields_removes_unreferenced() -> void:
 	# Add a linked field with seed 999 (not referenced by any gateway)
@@ -392,6 +393,7 @@ func test_cleanup_orphaned_linked_fields_preserves_referenced() -> void:
 # =============================================================================
 # Entities
 # =============================================================================
+
 
 func test_add_entity_and_get() -> void:
 	_storage.add_entity({"type": "tree", "x": 5, "y": 0})
@@ -428,31 +430,49 @@ func test_set_entities_replaces_all() -> void:
 # _load_from_dict Migration
 # =============================================================================
 
+
 func test_load_from_dict_valid_v4() -> void:
 	var data: Dictionary = {
 		"version": 4,
 		"town_name": "TestTown",
 		"last_saved": "2025-01-01T00:00:00",
-		"gateways": [
+		"gateways":
+		[
 			{
-				"id": 0, "link_type": "field", "linked_lobby_id": "12345",
-				"linked_map_name": "Field A", "generation_seed": 111,
-				"pearl_type": "flame_pearl", "linked_gateway_id": 2
+				"id": 0,
+				"link_type": "field",
+				"linked_lobby_id": "12345",
+				"linked_map_name": "Field A",
+				"generation_seed": 111,
+				"pearl_type": "flame_pearl",
+				"linked_gateway_id": 2
 			},
 			{
-				"id": 1, "link_type": "none", "linked_lobby_id": "0",
-				"linked_map_name": "", "generation_seed": 0,
-				"pearl_type": "", "linked_gateway_id": -1
+				"id": 1,
+				"link_type": "none",
+				"linked_lobby_id": "0",
+				"linked_map_name": "",
+				"generation_seed": 0,
+				"pearl_type": "",
+				"linked_gateway_id": -1
 			},
 			{
-				"id": 2, "link_type": "none", "linked_lobby_id": "0",
-				"linked_map_name": "", "generation_seed": 0,
-				"pearl_type": "", "linked_gateway_id": -1
+				"id": 2,
+				"link_type": "none",
+				"linked_lobby_id": "0",
+				"linked_map_name": "",
+				"generation_seed": 0,
+				"pearl_type": "",
+				"linked_gateway_id": -1
 			},
 			{
-				"id": 3, "link_type": "none", "linked_lobby_id": "0",
-				"linked_map_name": "", "generation_seed": 0,
-				"pearl_type": "", "linked_gateway_id": -1
+				"id": 3,
+				"link_type": "none",
+				"linked_lobby_id": "0",
+				"linked_map_name": "",
+				"generation_seed": 0,
+				"pearl_type": "",
+				"linked_gateway_id": -1
 			}
 		],
 		"linked_fields": {},
@@ -475,15 +495,10 @@ func test_load_from_dict_upgrades_missing_fields() -> void:
 	var data: Dictionary = {
 		"version": 1,
 		"town_name": "OldTown",
-		"gateways": [
-			{
-				"id": 0, "linked_lobby_id": "0",
-				"linked_map_name": "Field A", "generation_seed": 555
-			},
-			{
-				"id": 1, "linked_lobby_id": "0",
-				"linked_map_name": "", "generation_seed": 0
-			}
+		"gateways":
+		[
+			{"id": 0, "linked_lobby_id": "0", "linked_map_name": "Field A", "generation_seed": 555},
+			{"id": 1, "linked_lobby_id": "0", "linked_map_name": "", "generation_seed": 0}
 		]
 	}
 	_storage._load_from_dict(data)
@@ -509,12 +524,8 @@ func test_load_from_dict_lobby_id_int_to_string_migration() -> void:
 	var data: Dictionary = {
 		"version": 2,
 		"town_name": "MigrateTown",
-		"gateways": [
-			{
-				"id": 0, "linked_lobby_id": 42,
-				"linked_map_name": "Field", "generation_seed": 100
-			}
-		]
+		"gateways":
+		[{"id": 0, "linked_lobby_id": 42, "linked_map_name": "Field", "generation_seed": 100}]
 	}
 	_storage._load_from_dict(data)
 

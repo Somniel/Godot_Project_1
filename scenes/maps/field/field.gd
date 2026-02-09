@@ -89,9 +89,7 @@ func _ready() -> void:
 			# Town gateways store which field gateway they link to; this creates
 			# the reverse links on unconfigured field gateways.
 			@warning_ignore("return_value_discarded")
-			_town_linker.restore_town_gateway_links(
-				_gateways, _generation_seed, _origin_map_name
-			)
+			_town_linker.restore_town_gateway_links(_gateways, _generation_seed, _origin_map_name)
 			# Update all town gateways that link to this field with the new lobby ID
 			_town_linker.update_all_town_gateways_for_field(
 				_gateways, _generation_seed, _origin_map_name
@@ -110,9 +108,7 @@ func _connect_field_signals() -> void:
 	# Client gateway config requests (server only)
 	if multiplayer.is_server():
 		@warning_ignore("return_value_discarded")
-		NetworkManager.client_gateway_config_requested.connect(
-			_on_client_gateway_config_requested
-		)
+		NetworkManager.client_gateway_config_requested.connect(_on_client_gateway_config_requested)
 
 	# Client-only signals
 	if not multiplayer.is_server():
@@ -161,10 +157,20 @@ func _read_field_metadata() -> void:
 		_origin_owner_steam_id = owner_str.to_int()
 
 	var origin_raw: String = LobbyManager.get_lobby_metadata(lobby_id, "origin_lobby_id")
-	print("Field: seed=%d, origin=%d (raw='%s'), gateway=%d, origin_name=%s, pearl=%s, owner=%d" % [
-		_generation_seed, _origin_lobby_id, origin_raw, _origin_gateway,
-		_origin_map_name, _pearl_type, _origin_owner_steam_id
-	])
+	print(
+		(
+			"Field: seed=%d, origin=%d (raw='%s'), gateway=%d, origin_name=%s, pearl=%s, owner=%d"
+			% [
+				_generation_seed,
+				_origin_lobby_id,
+				origin_raw,
+				_origin_gateway,
+				_origin_map_name,
+				_pearl_type,
+				_origin_owner_steam_id
+			]
+		)
+	)
 
 
 func _is_own_field() -> bool:
@@ -194,7 +200,12 @@ func _generate_field_visuals() -> void:
 	# Spawn obstacles with themed colors (static, deterministic)
 	_spawn_obstacles()
 
-	print("Field: Generated %s-themed field visuals" % [_pearl_type if _pearl_type != &"" else &"default"])
+	print(
+		(
+			"Field: Generated %s-themed field visuals"
+			% [_pearl_type if _pearl_type != &"" else &"default"]
+		)
+	)
 
 
 func _generate_field_items() -> void:
@@ -211,9 +222,7 @@ func _reconstruct_items_from_crdt() -> void:
 	## 2. Skip items in _current_removed_items
 	## 3. Spawn placed_items (skip if also removed)
 	if _field_generator == null:
-		_field_generator = ProceduralFieldGenerator.new(
-			_generation_seed, _pearl_type
-		)
+		_field_generator = ProceduralFieldGenerator.new(_generation_seed, _pearl_type)
 
 	# Spawn generated items (skip removed)
 	var items: Array[Dictionary] = _field_generator.generate_items()
@@ -240,23 +249,18 @@ func _reconstruct_items_from_crdt() -> void:
 
 		var entry: Dictionary = _current_placed_items[iid]
 		var item_id_str: String = entry.get("item_id", "")
-		var item_id: StringName = (
-			StringName(item_id_str) if not item_id_str.is_empty() else &""
-		)
-		var pos: Vector3 = FieldCloudPersistence.parse_position(
-			entry.get("position", null)
-		)
+		var item_id: StringName = StringName(item_id_str) if not item_id_str.is_empty() else &""
+		var pos: Vector3 = FieldCloudPersistence.parse_position(entry.get("position", null))
 		var quantity: int = entry.get("quantity", 1)
 		if item_id != &"":
 			_spawn_item_at(item_id, pos, quantity, iid)
 			placed_count += 1
 
 	print(
-		("Field: Reconstructed from CRDT - %d generated, %d placed, "
-		+ "%d removed") % [
-			spawned_count, placed_count,
-			_current_removed_items.size()
-		]
+		(
+			("Field: Reconstructed from CRDT - %d generated, %d placed, " + "%d removed")
+			% [spawned_count, placed_count, _current_removed_items.size()]
+		)
 	)
 
 
@@ -305,6 +309,7 @@ func _spawn_obstacles() -> void:
 # MapBase Virtual Overrides
 # =============================================================================
 
+
 func _get_map_type_name() -> String:
 	return "Field"
 
@@ -347,8 +352,9 @@ func _exit_tree() -> void:
 
 func _disconnect_field_signals() -> void:
 	## Disconnect field-specific signals.
-	if _gateway_config_dialog and _gateway_config_dialog.town_link_requested.is_connected(
-		_on_town_link_requested
+	if (
+		_gateway_config_dialog
+		and _gateway_config_dialog.town_link_requested.is_connected(_on_town_link_requested)
 	):
 		_gateway_config_dialog.town_link_requested.disconnect(_on_town_link_requested)
 	if NetworkManager.client_gateway_config_requested.is_connected(
@@ -373,6 +379,7 @@ func _disconnect_field_signals() -> void:
 # Gateway System
 # =============================================================================
 
+
 func _spawn_gateways() -> void:
 	## Spawn the 4 gateways at the edges of the map.
 	## One gateway (based on origin_gateway) will be the return path.
@@ -387,9 +394,12 @@ func _spawn_gateways() -> void:
 	if _origin_lobby_id > 0 and _is_own_field():
 		var current_town_id: int = MapManager.get_own_town_lobby_id()
 		if current_town_id > 0 and current_town_id != _origin_lobby_id:
-			print("Field: Remapping origin lobby %d -> %d (town was re-hosted)" % [
-				_origin_lobby_id, current_town_id
-			])
+			print(
+				(
+					"Field: Remapping origin lobby %d -> %d (town was re-hosted)"
+					% [_origin_lobby_id, current_town_id]
+				)
+			)
 			effective_origin_lobby = current_town_id
 
 	# Get the origin town owner's Steam ID (for town link)
@@ -407,13 +417,20 @@ func _spawn_gateways() -> void:
 		# Set up the origin gateway (return path to town)
 		if i == return_gateway_id and effective_origin_lobby > 0:
 			gateway.is_origin_gateway = true
-			var return_name: String = _origin_map_name if not _origin_map_name.is_empty() else "Origin"
+			var return_name: String = (
+				_origin_map_name if not _origin_map_name.is_empty() else "Origin"
+			)
 			# Use set_town_link since origin is always a town
 			# Pass _origin_gateway as the target so we know which town gateway to return to
-			gateway.set_town_link(origin_owner_steam_id, effective_origin_lobby, return_name, _origin_gateway)
-			print("Field: Origin gateway %d set up: lobby=%d, target_gw=%d, owner=%d" % [
-				i, effective_origin_lobby, _origin_gateway, origin_owner_steam_id
-			])
+			gateway.set_town_link(
+				origin_owner_steam_id, effective_origin_lobby, return_name, _origin_gateway
+			)
+			print(
+				(
+					"Field: Origin gateway %d set up: lobby=%d, target_gw=%d, owner=%d"
+					% [i, effective_origin_lobby, _origin_gateway, origin_owner_steam_id]
+				)
+			)
 
 		# Connect signals
 		@warning_ignore("return_value_discarded")
@@ -426,26 +443,35 @@ func _spawn_gateways() -> void:
 		_gateways_container.add_child(gateway)
 		_gateways.append(gateway)
 
-	print("Field: Spawned %d gateways (return gateway: %d, origin_owner: %d)" % [
-		_gateways.size(), return_gateway_id, origin_owner_steam_id
-	])
+	print(
+		(
+			"Field: Spawned %d gateways (return gateway: %d, origin_owner: %d)"
+			% [_gateways.size(), return_gateway_id, origin_owner_steam_id]
+		)
+	)
 
 
-func _on_gateway_travel_requested(player: Node3D, destination_lobby_id: int, gateway: Gateway) -> void:
+func _on_gateway_travel_requested(
+	player: Node3D, destination_lobby_id: int, gateway: Gateway
+) -> void:
 	## Handle travel through a linked gateway.
 	if player == null or not player.is_multiplayer_authority():
 		return
 
-	print("Field: Travel requested to lobby %d via %s gateway" % [
-		destination_lobby_id, gateway.get_direction_name()
-	])
+	print(
+		(
+			"Field: Travel requested to lobby %d via %s gateway"
+			% [destination_lobby_id, gateway.get_direction_name()]
+		)
+	)
 
 	# For town links, check ownership using stable Steam ID
 	# Also fall back to _is_own_field() in case the gateway's Steam ID was
 	# lost during JSON serialization (large int precision)
 	if gateway.is_town_link():
-		var is_own: bool = gateway.linked_owner_steam_id == SteamManager.get_steam_id() \
-			or _is_own_field()
+		var is_own: bool = (
+			gateway.linked_owner_steam_id == SteamManager.get_steam_id() or _is_own_field()
+		)
 		if is_own:
 			# Own town - skip lobby validation (we'll re-host it)
 			# Use our actual Steam ID in case the gateway's value was corrupted
@@ -513,9 +539,12 @@ func _on_town_gateways_loaded(gateways: Array) -> void:
 				@warning_ignore("unsafe_cast")
 				town_gateways_to_show.append(gw as Dictionary)
 
-	print("Field: Town link check - is_host=%s, origin_lobby=%d, is_own_field=%s, show=%s, gateways=%d" % [
-		is_host, _origin_lobby_id, is_own_field, show_town_link, gateways.size()
-	])
+	print(
+		(
+			"Field: Town link check - is_host=%s, origin_lobby=%d, is_own_field=%s, show=%s, gateways=%d"
+			% [is_host, _origin_lobby_id, is_own_field, show_town_link, gateways.size()]
+		)
+	)
 
 	# Show the extended dialog with town link option (only if host on own field)
 	_gateway_config_dialog.show_for_field_gateway(
@@ -525,7 +554,9 @@ func _on_town_gateways_loaded(gateways: Array) -> void:
 	)
 
 
-func _on_gateway_configured(generation_seed: int, field_name: String, pearl_type: StringName) -> void:
+func _on_gateway_configured(
+	generation_seed: int, field_name: String, pearl_type: StringName
+) -> void:
 	## Handle gateway configuration from dialog. Just stores config, no travel.
 	if _pending_gateway_config == null:
 		return
@@ -533,9 +564,12 @@ func _on_gateway_configured(generation_seed: int, field_name: String, pearl_type
 	var gateway: Gateway = _pending_gateway_config
 	_pending_gateway_config = null
 
-	print("Field: Configured %s gateway for field '%s' (seed %d, pearl %s)" % [
-		gateway.get_direction_name(), field_name, generation_seed, pearl_type
-	])
+	print(
+		(
+			"Field: Configured %s gateway for field '%s' (seed %d, pearl %s)"
+			% [gateway.get_direction_name(), field_name, generation_seed, pearl_type]
+		)
+	)
 
 	if multiplayer.is_server():
 		# Server: consume pearl immediately, apply config, and broadcast
@@ -556,17 +590,16 @@ func _on_gateway_configured(generation_seed: int, field_name: String, pearl_type
 		)
 
 
-func _on_client_gateway_config_requested(peer_id: int, gateway_id: int, generation_seed: int,
-										 field_name: String, pearl_type: String) -> void:
+func _on_client_gateway_config_requested(
+	peer_id: int, gateway_id: int, generation_seed: int, field_name: String, pearl_type: String
+) -> void:
 	## Server handler for client gateway configuration requests.
 	if not multiplayer.is_server():
 		return
 
 	if gateway_id < 0 or gateway_id >= _gateways.size():
 		push_warning("Field: Invalid gateway_id %d from peer %d" % [gateway_id, peer_id])
-		NetworkManager.send_gateway_config_rejection(
-			peer_id, gateway_id, "Invalid gateway"
-		)
+		NetworkManager.send_gateway_config_rejection(peer_id, gateway_id, "Invalid gateway")
 		return
 
 	var gateway: Gateway = _gateways[gateway_id]
@@ -581,13 +614,17 @@ func _on_client_gateway_config_requested(peer_id: int, gateway_id: int, generati
 
 	# Don't allow reconfiguring already-linked gateways
 	if gateway.has_link():
-		push_warning("Field: Peer %d tried to reconfigure linked gateway %d" % [peer_id, gateway_id])
+		push_warning(
+			"Field: Peer %d tried to reconfigure linked gateway %d" % [peer_id, gateway_id]
+		)
 		NetworkManager.send_gateway_config_rejection(
 			peer_id, gateway_id, "Gateway already configured"
 		)
 		return
 
-	print("Field: Server applying gateway config from peer %d for gateway %d" % [peer_id, gateway_id])
+	print(
+		"Field: Server applying gateway config from peer %d for gateway %d" % [peer_id, gateway_id]
+	)
 
 	var pearl_sn: StringName = StringName(pearl_type) if not pearl_type.is_empty() else &""
 
@@ -595,9 +632,7 @@ func _on_client_gateway_config_requested(peer_id: int, gateway_id: int, generati
 	gateway.set_config(generation_seed, field_name, pearl_sn)
 
 	# Broadcast to all clients (including the requester)
-	NetworkManager.broadcast_gateway_state(
-		gateway_id, 0, field_name, generation_seed, pearl_sn, -1
-	)
+	NetworkManager.broadcast_gateway_state(gateway_id, 0, field_name, generation_seed, pearl_sn, -1)
 
 	# Confirm to the requesting client so they can consume their pearl
 	NetworkManager.send_gateway_config_confirmation(
@@ -606,8 +641,7 @@ func _on_client_gateway_config_requested(peer_id: int, gateway_id: int, generati
 
 
 func _on_gateway_config_confirmed(
-	gateway_id: int, _confirmed_seed: int, _field_name: String,
-	pearl_type: String
+	gateway_id: int, _confirmed_seed: int, _field_name: String, pearl_type: String
 ) -> void:
 	## Client handler: server confirmed our gateway config, consume the pearl.
 	if gateway_id != _pending_config_gateway_id:
@@ -636,21 +670,26 @@ func _on_gateway_config_rejected(gateway_id: int, reason: String) -> void:
 
 
 func _on_gateway_travel_create_requested(
-	player: Node3D, generation_seed: int, field_name: String, pearl_type: StringName, gateway: Gateway
+	player: Node3D,
+	generation_seed: int,
+	field_name: String,
+	pearl_type: StringName,
+	gateway: Gateway
 ) -> void:
 	## Handle travel when field needs to be created first.
 	## In fields, any player can create new fields.
 	if player == null or not player.is_multiplayer_authority():
 		return
 
-	print("Field: Creating and traveling to field '%s' (seed %d, pearl %s) via %s gateway" % [
-		field_name, generation_seed, pearl_type, gateway.get_direction_name()
-	])
+	print(
+		(
+			"Field: Creating and traveling to field '%s' (seed %d, pearl %s) via %s gateway"
+			% [field_name, generation_seed, pearl_type, gateway.get_direction_name()]
+		)
+	)
 
 	# Set travel source so destination knows where we came from
-	MapManager.set_travel_source(
-		LobbyManager.current_lobby_id, gateway.gateway_id, -1, "field"
-	)
+	MapManager.set_travel_source(LobbyManager.current_lobby_id, gateway.gateway_id, -1, "field")
 
 	# Cache current field state before leaving
 	_cache_field_state()
@@ -671,12 +710,8 @@ func _on_staged_field_ready(_lobby_id: int) -> void:
 
 	# Disconnect server_disconnected before intentional disconnect
 	# to prevent _return_to_menu() from destroying the staged lobby.
-	if multiplayer.server_disconnected.is_connected(
-		_on_server_disconnected
-	):
-		multiplayer.server_disconnected.disconnect(
-			_on_server_disconnected
-		)
+	if multiplayer.server_disconnected.is_connected(_on_server_disconnected):
+		multiplayer.server_disconnected.disconnect(_on_server_disconnected)
 
 	MapManager.finish_staged_field_transition()
 
@@ -710,9 +745,9 @@ func _on_town_link_requested(town_gateway_id: int) -> void:
 		print("Field: Rejected town link - origin is not player's own town")
 		return
 
-	print("Field: Linking gateway %d to town gateway %d" % [
-		field_gateway.gateway_id, town_gateway_id
-	])
+	print(
+		"Field: Linking gateway %d to town gateway %d" % [field_gateway.gateway_id, town_gateway_id]
+	)
 
 	_create_town_link(field_gateway, town_gateway_id)
 
@@ -736,13 +771,21 @@ func _create_town_link(field_gateway: Gateway, town_gateway_id: int) -> void:
 	var current_town_lobby: int = MapManager.get_own_town_lobby_id()
 	if current_town_lobby <= 0:
 		current_town_lobby = _origin_lobby_id
-	field_gateway.set_town_link(owner_steam_id, current_town_lobby, player_town_name, town_gateway_id)
+	field_gateway.set_town_link(
+		owner_steam_id, current_town_lobby, player_town_name, town_gateway_id
+	)
 
 	# Broadcast the gateway state change to all clients (including target gateway for travel)
 	if multiplayer.is_server():
 		NetworkManager.broadcast_gateway_state(
-			field_gateway.gateway_id, current_town_lobby, player_town_name, 0, &"",
-			town_gateway_id, "town", owner_steam_id
+			field_gateway.gateway_id,
+			current_town_lobby,
+			player_town_name,
+			0,
+			&"",
+			town_gateway_id,
+			"town",
+			owner_steam_id
 		)
 
 	# Update player's town gateway in Steam Cloud to link back to this field
@@ -822,9 +865,12 @@ func _on_gateway_state_received(gateway_id: int, data: Dictionary) -> void:
 		# Cleared or unknown type
 		gateway.clear_link()
 
-	print("Field: Received gateway %d sync from server (type=%s, lobby=%d, name=%s, target_gw=%d)" % [
-		gateway_id, link_type_str, lobby_id, map_name, linked_gw_id
-	])
+	print(
+		(
+			"Field: Received gateway %d sync from server (type=%s, lobby=%d, name=%s, target_gw=%d)"
+			% [gateway_id, link_type_str, lobby_id, map_name, linked_gw_id]
+		)
+	)
 
 
 func _sync_field_cache_to_peer(peer_id: int) -> void:
@@ -883,14 +929,10 @@ func _send_crdt_to_peer(peer_id: int) -> void:
 		"gateway_versions": _current_gateway_versions
 	}
 	var state_json: String = JSON.stringify(state)
-	NetworkManager.send_field_crdt_to_peer(
-		peer_id, _generation_seed, state_json
-	)
+	NetworkManager.send_field_crdt_to_peer(peer_id, _generation_seed, state_json)
 
 
-func _on_field_crdt_received(
-	peer_id: int, generation_seed: int, state_json: String
-) -> void:
+func _on_field_crdt_received(peer_id: int, generation_seed: int, state_json: String) -> void:
 	## Handle incoming CRDT state from a peer.
 	## Server: merges and reconciles world items.
 	## Client: sends own state back to server for bidirectional exchange.
@@ -937,37 +979,30 @@ func _on_field_crdt_received(
 		if not new_removed.is_empty() or not new_placed.is_empty():
 			_reconcile_world_items(new_removed, new_placed)
 			print(
-				("Field: Merged CRDT from peer %d "
-				+ "(+%d removed, +%d placed)") % [
-					peer_id, new_removed.size(), new_placed.size()
-				]
+				(
+					("Field: Merged CRDT from peer %d " + "(+%d removed, +%d placed)")
+					% [peer_id, new_removed.size(), new_placed.size()]
+				)
 			)
 	else:
 		# Client: send our state back to server for bidirectional merge
 		_send_crdt_to_peer(1)
 
 
-func _reconcile_world_items(
-	new_removed: Dictionary, new_placed: Dictionary
-) -> void:
+func _reconcile_world_items(new_removed: Dictionary, new_placed: Dictionary) -> void:
 	## Reconcile world items after CRDT merge.
 	## Removes items newly in removed set, spawns items newly in placed set.
 	if not multiplayer.is_server():
 		return
 
 	# Remove world items that are newly in the removed set
-	var spawn_target: Node = _item_spawner.get_node(
-		_item_spawner.spawn_path
-	)
+	var spawn_target: Node = _item_spawner.get_node(_item_spawner.spawn_path)
 	if spawn_target != null:
 		for child: Node in spawn_target.get_children():
 			if child is WorldItem:
 				@warning_ignore("unsafe_cast")
 				var wi: WorldItem = child as WorldItem
-				if (
-					not wi.instance_id.is_empty()
-					and new_removed.has(wi.instance_id)
-				):
+				if not wi.instance_id.is_empty() and new_removed.has(wi.instance_id):
 					wi.queue_free()
 
 	# Spawn newly placed items (skip if also removed)
@@ -978,9 +1013,7 @@ func _reconcile_world_items(
 		var item_id_str: String = entry.get("item_id", "")
 		if item_id_str.is_empty():
 			continue
-		var pos: Vector3 = FieldCloudPersistence.parse_position(
-			entry.get("position", null)
-		)
+		var pos: Vector3 = FieldCloudPersistence.parse_position(entry.get("position", null))
 		var quantity: int = entry.get("quantity", 1)
 		_spawn_item_at(StringName(item_id_str), pos, quantity, iid)
 
@@ -1089,35 +1122,40 @@ func _clear_stale_gateway_link(gateway: Gateway) -> void:
 # Field State Caching
 # =============================================================================
 
+
 func _cache_field_state() -> void:
 	## Cache the current CRDT field state before leaving.
 	if not multiplayer.is_server():
 		return
 
-	var gateways: Array[Dictionary] = _cloud_persistence.serialize_gateways(
-		_gateways
-	)
+	var gateways: Array[Dictionary] = _cloud_persistence.serialize_gateways(_gateways)
 	var modifier_steam_id: int = SteamManager.get_steam_id()
 
 	# Save CRDT sets to session cache (for multiplayer)
 	MapManager.cache_current_field(
-		_current_removed_items, _current_placed_items,
-		_current_gateway_versions, gateways, modifier_steam_id
+		_current_removed_items,
+		_current_placed_items,
+		_current_gateway_versions,
+		gateways,
+		modifier_steam_id
 	)
 	print(
-		"Field: Cached CRDT state (%d removed, %d placed, %d gateways)"
-		% [
-			_current_removed_items.size(),
-			_current_placed_items.size(), gateways.size()
-		]
+		(
+			"Field: Cached CRDT state (%d removed, %d placed, %d gateways)"
+			% [_current_removed_items.size(), _current_placed_items.size(), gateways.size()]
+		)
 	)
 
 	# Also save to town's Steam Cloud if this is player's own linked field
 	if _is_own_field():
 		@warning_ignore("return_value_discarded")
 		_cloud_persistence.save_to_town_cloud(
-			_generation_seed, _pearl_type, _current_removed_items,
-			_current_placed_items, _current_gateway_versions, gateways
+			_generation_seed,
+			_pearl_type,
+			_current_removed_items,
+			_current_placed_items,
+			_current_gateway_versions,
+			gateways
 		)
 
 	# Broadcast updated cache to all connected clients before leaving
@@ -1126,9 +1164,7 @@ func _cache_field_state() -> void:
 
 func _load_crdt_from_cache() -> void:
 	## Load CRDT sets from session cache (restoring a previously visited field).
-	var state: FieldStateCache.FieldState = (
-		MapManager.get_pending_field_restoration()
-	)
+	var state: FieldStateCache.FieldState = MapManager.get_pending_field_restoration()
 	if state == null:
 		return
 
@@ -1141,10 +1177,10 @@ func _load_crdt_from_cache() -> void:
 		_apply_single_gateway_from_data(gateway_data)
 
 	print(
-		"Field: Loaded CRDT from cache (%d removed, %d placed)" % [
-			_current_removed_items.size(),
-			_current_placed_items.size()
-		]
+		(
+			"Field: Loaded CRDT from cache (%d removed, %d placed)"
+			% [_current_removed_items.size(), _current_placed_items.size()]
+		)
 	)
 
 	# Clear the restoration state
@@ -1157,19 +1193,14 @@ func _load_crdt_from_town_cloud() -> bool:
 	if not _is_own_field():
 		return false
 
-	var field_dict: Variant = _cloud_persistence.load_from_town_cloud(
-		_generation_seed
-	)
+	var field_dict: Variant = _cloud_persistence.load_from_town_cloud(_generation_seed)
 	if field_dict == null:
 		return false
 
 	@warning_ignore("unsafe_cast")
 	var data: Dictionary = field_dict as Dictionary
 
-	print(
-		"Field: Loading CRDT from town cloud (seed %d)..."
-		% _generation_seed
-	)
+	print("Field: Loading CRDT from town cloud (seed %d)..." % _generation_seed)
 
 	# Load CRDT sets
 	var removed: Variant = data.get("removed_items", {})
@@ -1202,8 +1233,10 @@ func _load_crdt_from_town_cloud() -> bool:
 		print("Field: Restored gateways from town cloud")
 
 	print(
-		"Field: Loaded CRDT from town cloud (%d removed, %d placed)"
-		% [_current_removed_items.size(), _current_placed_items.size()]
+		(
+			"Field: Loaded CRDT from town cloud (%d removed, %d placed)"
+			% [_current_removed_items.size(), _current_placed_items.size()]
+		)
 	)
 	return true
 
@@ -1249,8 +1282,10 @@ func _load_crdt_from_pending() -> bool:
 				_apply_single_gateway_from_data(gw_entry as Dictionary)
 
 	print(
-		"Field: Loaded CRDT from pending (%d removed, %d placed)"
-		% [_current_removed_items.size(), _current_placed_items.size()]
+		(
+			"Field: Loaded CRDT from pending (%d removed, %d placed)"
+			% [_current_removed_items.size(), _current_placed_items.size()]
+		)
 	)
 	return true
 
@@ -1293,9 +1328,12 @@ func _apply_gateway_configs_from_cloud(gateways_data: Array) -> void:
 			var current_town_id: int = MapManager.get_own_town_lobby_id()
 			var current_id: int = current_town_id if current_town_id > 0 else linked_id
 			if current_id != linked_id and current_town_id > 0:
-				print("Field: Remapping gateway %d town link %d -> %d (cloud)" % [
-					gw_id, linked_id, current_id
-				])
+				print(
+					(
+						"Field: Remapping gateway %d town link %d -> %d (cloud)"
+						% [gw_id, linked_id, current_id]
+					)
+				)
 			if owner_steam_id == 0:
 				owner_steam_id = SteamManager.get_steam_id()
 			gateway.set_town_link(owner_steam_id, current_id, linked_name, linked_gw_id)
@@ -1304,17 +1342,16 @@ func _apply_gateway_configs_from_cloud(gateways_data: Array) -> void:
 			# Keep seed for recreation but clear stale lobby ID
 			if gen_seed > 0:
 				gateway.set_config(gen_seed, linked_name, pearl)
-				print("Field: Restored gateway %d as field config (seed %d)" % [
-					gw_id, gen_seed
-				])
+				print("Field: Restored gateway %d as field config (seed %d)" % [gw_id, gen_seed])
 			# else: seed 0 with field type = invalid, leave unconfigured
 		elif linked_id > 0 and gen_seed == 0:
 			# Legacy data: lobby ID but no link_type and no seed.
 			# Likely a town link from before link_type was added.
 			var current_town_id: int = MapManager.get_own_town_lobby_id()
 			if current_town_id > 0:
-				gateway.set_town_link(SteamManager.get_steam_id(),
-					current_town_id, linked_name, linked_gw_id)
+				gateway.set_town_link(
+					SteamManager.get_steam_id(), current_town_id, linked_name, linked_gw_id
+				)
 				print("Field: Converted legacy gateway %d to town link" % gw_id)
 		elif linked_id > 0 and gen_seed > 0:
 			# Legacy data: lobby ID with seed = field link, keep seed only
@@ -1336,9 +1373,7 @@ func _apply_single_gateway_from_data(gateway_data: Dictionary) -> void:
 	var linked_name: String = gateway_data.get("linked_map_name", "")
 	var gen_seed: int = gateway_data.get("generation_seed", 0)
 	var pearl_str: String = gateway_data.get("pearl_type", "")
-	var pearl: StringName = (
-		StringName(pearl_str) if not pearl_str.is_empty() else &""
-	)
+	var pearl: StringName = StringName(pearl_str) if not pearl_str.is_empty() else &""
 	var linked_gw_id: int = gateway_data.get("linked_gateway_id", -1)
 	var link_type_str: String = gateway_data.get("link_type", "none")
 	var owner_steam_id: int = FieldCloudPersistence.parse_steam_id(
@@ -1351,9 +1386,7 @@ func _apply_single_gateway_from_data(gateway_data: Dictionary) -> void:
 			var current_town_id: int = MapManager.get_own_town_lobby_id()
 			if current_town_id > 0:
 				current_id = current_town_id
-		gateway.set_town_link(
-			owner_steam_id, current_id, linked_name, linked_gw_id
-		)
+		gateway.set_town_link(owner_steam_id, current_id, linked_name, linked_gw_id)
 	elif link_type_str == "field" and (linked_id > 0 or gen_seed > 0):
 		if linked_id > 0:
 			gateway.set_link(linked_id, linked_name, linked_gw_id)
@@ -1385,9 +1418,7 @@ func _track_item_removal(world_item: WorldItem) -> void:
 	}
 
 
-func _track_item_placement(
-	item_id: StringName, pos: Vector3, quantity: int
-) -> String:
+func _track_item_placement(item_id: StringName, pos: Vector3, quantity: int) -> String:
 	## Record item drop in CRDT placed_items set. Returns instance ID.
 	var iid: String = _generate_placed_id()
 	_current_placed_items[iid] = {
@@ -1406,6 +1437,7 @@ func _track_item_placement(
 # Totem Interaction
 # =============================================================================
 
+
 func _on_totem_interacted(player: Node3D) -> void:
 	## Handle player interacting with the field totem.
 	if player == null or not player.is_multiplayer_authority():
@@ -1413,7 +1445,9 @@ func _on_totem_interacted(player: Node3D) -> void:
 
 	var field_name: String = "Field %d" % _generation_seed
 	var player_count: int = _players_container.get_child_count()
-	var host_name: String = SteamManager.get_steam_username() if multiplayer.is_server() else "Unknown"
+	var host_name: String = (
+		SteamManager.get_steam_username() if multiplayer.is_server() else "Unknown"
+	)
 	var is_host: bool = multiplayer.is_server()
 
 	# Pass false for is_host to hide edit button (field names aren't editable)
@@ -1428,11 +1462,13 @@ func _get_gateway_data_for_ui() -> Array[Dictionary]:
 	## Collect gateway connection data for the totem UI.
 	var data: Array[Dictionary] = []
 	for gateway: Gateway in _gateways:
-		data.append({
-			"has_link": gateway.has_link(),
-			"linked_map_name": gateway.linked_map_name,
-			"is_origin": gateway.is_origin_gateway
-		})
+		data.append(
+			{
+				"has_link": gateway.has_link(),
+				"linked_map_name": gateway.linked_map_name,
+				"is_origin": gateway.is_origin_gateway
+			}
+		)
 	return data
 
 
@@ -1452,8 +1488,10 @@ func _on_gateway_clear_requested(gateway_id: int) -> void:
 
 	# Check if this gateway links to the player's own town (bidirectional link)
 	# If so, we need to also clear the town gateway that points to this field
-	var links_to_own_town: bool = gateway.is_town_link() and \
-		(gateway.linked_owner_steam_id == SteamManager.get_steam_id() or _is_own_field())
+	var links_to_own_town: bool = (
+		gateway.is_town_link()
+		and (gateway.linked_owner_steam_id == SteamManager.get_steam_id() or _is_own_field())
+	)
 	if links_to_own_town:
 		_town_linker.clear_town_gateway_link(_generation_seed)
 
@@ -1470,6 +1508,7 @@ func _on_gateway_clear_requested(gateway_id: int) -> void:
 # =============================================================================
 # Travel Confirmation
 # =============================================================================
+
 
 func _on_travel_confirm_confirmed() -> void:
 	## Handle player confirming travel via confirmation dialog.
@@ -1491,14 +1530,20 @@ func _on_travel_confirm_confirmed() -> void:
 
 	if lobby_id > 0 or (is_town and owner_steam_id > 0):
 		var link_type: String = "town" if is_town else "field"
-		print("Field: Travel confirmed (type=%s, lobby=%d, gateway=%d, target=%d)" % [
-			link_type, lobby_id, travel_gateway_id, target_gateway_id
-		])
+		print(
+			(
+				"Field: Travel confirmed (type=%s, lobby=%d, gateway=%d, target=%d)"
+				% [link_type, lobby_id, travel_gateway_id, target_gateway_id]
+			)
+		)
 
 		# Set travel source so destination knows where we came from
 		MapManager.set_travel_source(
-			LobbyManager.current_lobby_id, travel_gateway_id, target_gateway_id,
-			link_type, owner_steam_id
+			LobbyManager.current_lobby_id,
+			travel_gateway_id,
+			target_gateway_id,
+			link_type,
+			owner_steam_id
 		)
 
 		# Cache current field state before leaving

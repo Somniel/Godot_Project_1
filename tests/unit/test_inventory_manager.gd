@@ -2,7 +2,6 @@ extends GutTest
 ## Unit tests for InventoryManager autoload.
 ## Tests core slot manipulation logic independent of Steam persistence.
 
-
 # =============================================================================
 # Test Fixtures
 # =============================================================================
@@ -86,6 +85,7 @@ func _cancel_pending_save() -> void:
 # Item Registry Tests
 # =============================================================================
 
+
 func test_register_item_stores_data() -> void:
 	var item: ItemData = InventoryManager.get_item_data(&"test_item_a")
 	assert_not_null(item, "Registered item should be retrievable")
@@ -137,6 +137,7 @@ func test_register_item_rejects_empty_id() -> void:
 # =============================================================================
 # Add Item Tests
 # =============================================================================
+
 
 func test_add_item_to_empty_inventory() -> void:
 	var overflow: int = InventoryManager.add_item(&"test_item_a", 5)
@@ -215,7 +216,9 @@ func test_add_unknown_item_returns_full_quantity() -> void:
 			err.handled = true
 
 	assert_eq(overflow, 5, "Should return all items for unknown item type")
-	assert_eq(InventoryManager.get_item_count(&"unknown_item"), 0, "Unknown item should not be added")
+	assert_eq(
+		InventoryManager.get_item_count(&"unknown_item"), 0, "Unknown item should not be added"
+	)
 
 
 func test_add_item_zero_quantity() -> void:
@@ -254,6 +257,7 @@ func test_add_item_emits_inventory_full_when_overflow() -> void:
 # =============================================================================
 # Remove From Slot Tests
 # =============================================================================
+
 
 func test_remove_from_slot_decreases_quantity() -> void:
 	InventoryManager.add_item(&"test_item_a", 10)
@@ -309,6 +313,7 @@ func test_remove_from_slot_emits_signals() -> void:
 # =============================================================================
 # Set/Clear Slot Tests
 # =============================================================================
+
 
 func test_set_slot_creates_item() -> void:
 	InventoryManager.set_slot(5, &"test_item_a", 7)
@@ -366,6 +371,7 @@ func test_clear_slot_invalid_index() -> void:
 # Swap Slots Tests
 # =============================================================================
 
+
 func test_swap_slots_exchanges_contents() -> void:
 	InventoryManager.set_slot(0, &"test_item_a", 5)
 	InventoryManager.set_slot(1, &"test_item_b", 3)
@@ -387,7 +393,9 @@ func test_swap_slots_works_with_empty() -> void:
 	InventoryManager.swap_slots(0, 1)
 
 	assert_true(InventoryManager.is_slot_empty(0), "Slot 0 should be empty")
-	assert_eq(InventoryManager.get_slot(1).get("item_id"), &"test_item_a", "Slot 1 should have item")
+	assert_eq(
+		InventoryManager.get_slot(1).get("item_id"), &"test_item_a", "Slot 1 should have item"
+	)
 
 
 func test_swap_slots_same_index_no_change() -> void:
@@ -423,6 +431,7 @@ func test_swap_slots_emits_signals() -> void:
 # =============================================================================
 # Merge Stacks Tests
 # =============================================================================
+
 
 func test_merge_stacks_combines_same_items() -> void:
 	InventoryManager.set_slot(0, &"test_item_a", 3)
@@ -490,6 +499,7 @@ func test_merge_stacks_same_slot() -> void:
 # Split From Slot Tests
 # =============================================================================
 
+
 func test_split_from_slot_divides_stack() -> void:
 	InventoryManager.set_slot(0, &"test_item_a", 10)
 
@@ -550,6 +560,7 @@ func test_split_from_slot_invalid_index() -> void:
 # Query Method Tests
 # =============================================================================
 
+
 func test_has_item_checks_total_across_slots() -> void:
 	InventoryManager.set_slot(0, &"test_item_a", 5)
 	InventoryManager.set_slot(5, &"test_item_a", 3)
@@ -597,8 +608,8 @@ func test_find_empty_slot_returns_negative_when_full() -> void:
 
 func test_find_slot_with_space_finds_partial_stack() -> void:
 	InventoryManager.set_slot(0, &"test_item_a", 10)  # Full stack
-	InventoryManager.set_slot(1, &"test_item_b", 2)   # Different item
-	InventoryManager.set_slot(2, &"test_item_a", 5)   # Partial stack
+	InventoryManager.set_slot(1, &"test_item_b", 2)  # Different item
+	InventoryManager.set_slot(2, &"test_item_a", 5)  # Partial stack
 
 	var slot_idx: int = InventoryManager.find_slot_with_space(&"test_item_a")
 
@@ -654,6 +665,7 @@ func test_get_slot_invalid_index_returns_empty() -> void:
 # =============================================================================
 # is_loaded Tests
 # =============================================================================
+
 
 func test_is_loaded_returns_bool() -> void:
 	# Just verify it returns a bool without crashing

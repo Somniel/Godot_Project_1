@@ -2,10 +2,10 @@ extends GutTest
 ## Unit tests for ProceduralFieldGenerator.
 ## Tests theme selection, deterministic generation, and weighted item spawning.
 
-
 # =============================================================================
 # Theme Selection Tests
 # =============================================================================
+
 
 func test_flame_pearl_returns_flame_theme() -> void:
 	var generator := ProceduralFieldGenerator.new(12345, &"flame_pearl")
@@ -67,6 +67,7 @@ func test_empty_pearl_defaults_to_flame_theme() -> void:
 # Obstacle Color Tests
 # =============================================================================
 
+
 func test_obstacle_colors_match_theme() -> void:
 	var generator := ProceduralFieldGenerator.new(12345, &"flame_pearl")
 
@@ -92,6 +93,7 @@ func test_obstacle_color_unknown_type_returns_grey() -> void:
 # Deterministic Generation Tests
 # =============================================================================
 
+
 func test_same_seed_produces_same_obstacles() -> void:
 	var gen_a := ProceduralFieldGenerator.new(42, &"flame_pearl")
 	var gen_b := ProceduralFieldGenerator.new(42, &"flame_pearl")
@@ -99,14 +101,12 @@ func test_same_seed_produces_same_obstacles() -> void:
 	var obstacles_a: Array[Dictionary] = gen_a.generate_obstacles()
 	var obstacles_b: Array[Dictionary] = gen_b.generate_obstacles()
 
-	assert_eq(obstacles_a.size(), obstacles_b.size(), "Same seed should produce same obstacle count")
+	assert_eq(
+		obstacles_a.size(), obstacles_b.size(), "Same seed should produce same obstacle count"
+	)
 
 	for i: int in range(obstacles_a.size()):
-		assert_eq(
-			obstacles_a[i]["type"],
-			obstacles_b[i]["type"],
-			"Obstacle types should match"
-		)
+		assert_eq(obstacles_a[i]["type"], obstacles_b[i]["type"], "Obstacle types should match")
 		assert_eq(
 			obstacles_a[i]["position"],
 			obstacles_b[i]["position"],
@@ -128,16 +128,8 @@ func test_same_seed_produces_same_items() -> void:
 	assert_eq(items_a.size(), items_b.size(), "Same seed should produce same item count")
 
 	for i: int in range(items_a.size()):
-		assert_eq(
-			items_a[i]["item_id"],
-			items_b[i]["item_id"],
-			"Item IDs should match"
-		)
-		assert_eq(
-			items_a[i]["position"],
-			items_b[i]["position"],
-			"Item positions should match"
-		)
+		assert_eq(items_a[i]["item_id"], items_b[i]["item_id"], "Item IDs should match")
+		assert_eq(items_a[i]["position"], items_b[i]["position"], "Item positions should match")
 
 
 func test_different_seeds_produce_different_results() -> void:
@@ -188,6 +180,7 @@ func test_same_seed_different_pearl_produces_same_layout() -> void:
 # Item Pool Weighting Tests
 # =============================================================================
 
+
 func test_flame_pearl_favors_flame_items() -> void:
 	# Generate many items and check distribution
 	var flame_count: int = 0
@@ -207,9 +200,11 @@ func test_flame_pearl_favors_flame_items() -> void:
 	# With 3x weighting, flame pearls should be ~50% (3/6 of pool)
 	# Allow some variance but it should be significantly above 25% (equal distribution)
 	var flame_ratio: float = float(flame_count) / float(total_count)
-	assert_gt(flame_ratio, 0.35, "Flame fields should favor flame pearl spawns (got %.1f%%)" % [
-		flame_ratio * 100
-	])
+	assert_gt(
+		flame_ratio,
+		0.35,
+		"Flame fields should favor flame pearl spawns (got %.1f%%)" % [flame_ratio * 100]
+	)
 
 
 func test_water_pearl_favors_water_items() -> void:
@@ -227,14 +222,17 @@ func test_water_pearl_favors_water_items() -> void:
 				water_count += 1
 
 	var water_ratio: float = float(water_count) / float(total_count)
-	assert_gt(water_ratio, 0.35, "Water fields should favor water pearl spawns (got %.1f%%)" % [
-		water_ratio * 100
-	])
+	assert_gt(
+		water_ratio,
+		0.35,
+		"Water fields should favor water pearl spawns (got %.1f%%)" % [water_ratio * 100]
+	)
 
 
 # =============================================================================
 # Spawn Point Tests
 # =============================================================================
+
 
 func test_spawn_points_returns_four_points() -> void:
 	var generator := ProceduralFieldGenerator.new(12345, &"flame_pearl")
@@ -267,6 +265,7 @@ func test_spawn_points_are_deterministic() -> void:
 # Getter Tests
 # =============================================================================
 
+
 func test_get_seed_returns_seed() -> void:
 	var generator := ProceduralFieldGenerator.new(12345, &"flame_pearl")
 	assert_eq(generator.get_seed(), 12345, "Should return the generation seed")
@@ -280,6 +279,7 @@ func test_get_pearl_type_returns_pearl_type() -> void:
 # =============================================================================
 # Obstacle Generation Tests
 # =============================================================================
+
 
 func test_obstacles_count_in_range() -> void:
 	# Run multiple times to verify count range
