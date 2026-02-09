@@ -30,10 +30,10 @@ var _held_quantity: int = 0
 var _held_source_slot: int = -1
 var _held_from_split: bool = false
 
-
 # =============================================================================
 # Dictionary Helper Functions
 # =============================================================================
+
 
 static func _get_item_id(slot_data: Dictionary) -> StringName:
 	## Safely extract item_id from slot dictionary.
@@ -172,6 +172,7 @@ func _refresh_slot(index: int) -> void:
 # Show/Hide
 # =============================================================================
 
+
 func show_inventory() -> void:
 	if _state != State.CLOSED:
 		return
@@ -222,6 +223,7 @@ func is_open() -> bool:
 # =============================================================================
 # Slot Interaction Handlers
 # =============================================================================
+
 
 func _on_slot_left_clicked(slot_index: int) -> void:
 	match _state:
@@ -375,7 +377,9 @@ func _return_held_to_source() -> void:
 		# Add split items back to source slot
 		var source_data: Dictionary = InventoryManager.get_slot(_held_source_slot)
 		var source_quantity: int = _get_quantity(source_data)
-		InventoryManager.set_slot(_held_source_slot, _held_item_id, source_quantity + _held_quantity)
+		InventoryManager.set_slot(
+			_held_source_slot, _held_item_id, source_quantity + _held_quantity
+		)
 	else:
 		# Return full stack to source slot
 		InventoryManager.set_slot(_held_source_slot, _held_item_id, _held_quantity)
@@ -409,6 +413,7 @@ func _clear_held_state() -> void:
 # =============================================================================
 # Context Menu
 # =============================================================================
+
 
 func _show_context_menu(slot_index: int) -> void:
 	var slot_data: Dictionary = InventoryManager.get_slot(slot_index)
@@ -456,6 +461,7 @@ func _on_context_split_requested(slot_index: int) -> void:
 # =============================================================================
 # Split Dialog
 # =============================================================================
+
 
 func _show_split_dialog(slot_index: int, max_quantity: int) -> void:
 	if _split_dialog != null:
@@ -506,6 +512,7 @@ func _on_split_cancelled() -> void:
 # =============================================================================
 # Event Handlers
 # =============================================================================
+
 
 func _on_close_button_pressed() -> void:
 	hide_inventory()

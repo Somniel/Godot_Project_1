@@ -10,16 +10,16 @@ const PICKUP_RANGE: float = 3.0
 ## Gateway positions (N, E, S, W) - distance from center
 const GATEWAY_DISTANCE: float = 15.0
 const GATEWAY_POSITIONS: Array[Vector3] = [
-	Vector3(0, 0, -GATEWAY_DISTANCE),   # North
-	Vector3(GATEWAY_DISTANCE, 0, 0),    # East
-	Vector3(0, 0, GATEWAY_DISTANCE),    # South
-	Vector3(-GATEWAY_DISTANCE, 0, 0),   # West
+	Vector3(0, 0, -GATEWAY_DISTANCE),  # North
+	Vector3(GATEWAY_DISTANCE, 0, 0),  # East
+	Vector3(0, 0, GATEWAY_DISTANCE),  # South
+	Vector3(-GATEWAY_DISTANCE, 0, 0),  # West
 ]
 const GATEWAY_ROTATIONS: Array[float] = [
-	0.0,    # North - facing south (toward center)
+	0.0,  # North - facing south (toward center)
 	-90.0,  # East - facing west
 	180.0,  # South - facing north
-	90.0,   # West - facing east
+	90.0,  # West - facing east
 ]
 
 
@@ -58,7 +58,6 @@ static func _get_spawn_item_id(spawn_data: Dictionary) -> StringName:
 @onready var _totem_interactable: Interactable = $Environment/Totem/Interactable
 @onready var _travel_confirm_dialog: TravelConfirmDialog = $UI/TravelConfirmDialog
 
-
 # =============================================================================
 # Shared State
 # =============================================================================
@@ -74,10 +73,10 @@ var _pending_pickups: Dictionary = {}
 ## Counter for generating unique placed-item instance IDs within this session.
 var _placed_id_counter: int = 0
 
-
 # =============================================================================
 # Virtual Methods (override in subclasses)
 # =============================================================================
+
 
 func _get_map_type_name() -> String:
 	## Return "Field" or "Town" for log messages.
@@ -106,9 +105,7 @@ func _get_arrival_gateway_id() -> int:
 	for i: int in range(_gateways.size()):
 		var gateway: Gateway = _gateways[i]
 		if gateway.linked_lobby_id == source_lobby:
-			print("%s: Found gateway %d linking to source lobby" % [
-				_get_map_type_name(), i
-			])
+			print("%s: Found gateway %d linking to source lobby" % [_get_map_type_name(), i])
 			return i
 
 	return -1
@@ -125,9 +122,7 @@ func _track_item_removal(_world_item: WorldItem) -> void:
 	pass
 
 
-func _track_item_placement(
-	_item_id: StringName, _pos: Vector3, _quantity: int
-) -> String:
+func _track_item_placement(_item_id: StringName, _pos: Vector3, _quantity: int) -> String:
 	## Called when a player drops an item.
 	## Subclasses override to record CRDT placement metadata.
 	## Returns an instance ID for the placed item ("" if not tracked).
@@ -148,6 +143,7 @@ func _on_peer_connected(peer_id: int) -> void:
 # =============================================================================
 # Signal Management
 # =============================================================================
+
 
 func _connect_shared_signals() -> void:
 	## Connect signals shared between all map types.
@@ -241,6 +237,7 @@ func _disconnect_shared_signals() -> void:
 # Player Spawning
 # =============================================================================
 
+
 func _spawn_all_connected_players() -> void:
 	print("%s: Spawning all connected players..." % _get_map_type_name())
 
@@ -261,15 +258,15 @@ func _is_player_spawned(peer_id: int) -> bool:
 
 func _spawn_player(peer_id: int) -> Node:
 	var role: String = "Server" if multiplayer.is_server() else "Client"
-	print("%s: _spawn_player() called for peer %d (I am %s)" % [
-		_get_map_type_name(), peer_id, role
-	])
+	print(
+		"%s: _spawn_player() called for peer %d (I am %s)" % [_get_map_type_name(), peer_id, role]
+	)
 
 	var player: CharacterBody3D = PLAYER_SCENE.instantiate()
 	if player == null:
-		push_error("%s: Failed to instantiate player scene for peer %d" % [
-			_get_map_type_name(), peer_id
-		])
+		push_error(
+			"%s: Failed to instantiate player scene for peer %d" % [_get_map_type_name(), peer_id]
+		)
 		return null
 
 	player.name = str(peer_id)
@@ -286,9 +283,12 @@ func _spawn_player(peer_id: int) -> Node:
 
 	player.position = spawn_point
 
-	print("%s: Created player node '%s' at position %s" % [
-		_get_map_type_name(), player.name, spawn_point
-	])
+	print(
+		(
+			"%s: Created player node '%s' at position %s"
+			% [_get_map_type_name(), player.name, spawn_point]
+		)
+	)
 	return player
 
 
@@ -302,9 +302,12 @@ func _get_host_spawn_point() -> Vector3:
 		var direction_to_center: Vector3 = -gateway_pos.normalized()
 		var spawn_pos: Vector3 = gateway_pos + direction_to_center * 3.0
 		spawn_pos.y = 1.0
-		print("%s: Host spawning near gateway %d at %s" % [
-			_get_map_type_name(), arrival_gateway_id, spawn_pos
-		])
+		print(
+			(
+				"%s: Host spawning near gateway %d at %s"
+				% [_get_map_type_name(), arrival_gateway_id, spawn_pos]
+			)
+		)
 		MapManager.clear_travel_source()
 		return spawn_pos
 
@@ -339,6 +342,7 @@ func _on_player_removed(_node: Node) -> void:
 # Peer Lifecycle
 # =============================================================================
 
+
 func _on_peer_disconnected(peer_id: int) -> void:
 	print("%s: Peer disconnected: %d" % [_get_map_type_name(), peer_id])
 	var player_node := _players_container.get_node_or_null(str(peer_id))
@@ -348,6 +352,8 @@ func _on_peer_disconnected(peer_id: int) -> void:
 
 
 func _on_server_disconnected() -> void:
+	if MapManager.is_traveling:
+		return  # Intentional disconnect during travel — don't return to menu
 	print("%s: Server disconnected" % _get_map_type_name())
 	_return_to_menu()
 
@@ -367,6 +373,7 @@ func _return_to_menu() -> void:
 # Item Spawning & Pickup
 # =============================================================================
 
+
 func _generate_placed_id() -> String:
 	## Generate a unique instance ID for a player-placed item.
 	## Format: "placed_{steam_id}_{unix_time}_{counter}"
@@ -378,17 +385,13 @@ func _generate_placed_id() -> String:
 
 
 func _spawn_item_at(
-	item_id: StringName, pos: Vector3, quantity: int = 1,
-	p_instance_id: String = ""
+	item_id: StringName, pos: Vector3, quantity: int = 1, p_instance_id: String = ""
 ) -> void:
 	if not multiplayer.is_server():
 		return
 
 	var spawn_data: Dictionary = {
-		"item_id": str(item_id),
-		"position": pos,
-		"quantity": quantity,
-		"instance_id": p_instance_id
+		"item_id": str(item_id), "position": pos, "quantity": quantity, "instance_id": p_instance_id
 	}
 	@warning_ignore("return_value_discarded")
 	_item_spawner.spawn(spawn_data)
@@ -407,16 +410,12 @@ func _spawn_world_item(data: Variant) -> Node:
 
 	var item_data: ItemData = InventoryManager.get_item_data(item_id)
 	if item_data == null or item_data.world_scene == null:
-		push_error("%s: Unknown item or no world scene: %s" % [
-			_get_map_type_name(), item_id
-		])
+		push_error("%s: Unknown item or no world scene: %s" % [_get_map_type_name(), item_id])
 		return null
 
 	var world_item: WorldItem = item_data.world_scene.instantiate()
 	if world_item == null:
-		push_error("%s: Failed to instantiate world item: %s" % [
-			_get_map_type_name(), item_id
-		])
+		push_error("%s: Failed to instantiate world item: %s" % [_get_map_type_name(), item_id])
 		return null
 
 	world_item.item_id = item_id
@@ -460,25 +459,22 @@ func _process_pickup(peer_id: int, item_path: String) -> void:
 	var world_item: WorldItem = get_node_or_null(item_path)
 
 	if world_item == null:
-		print("%s: Pickup request failed - item not found: %s" % [
-			_get_map_type_name(), item_path
-		])
+		print("%s: Pickup request failed - item not found: %s" % [_get_map_type_name(), item_path])
 		return
 
 	var player_node: Node3D = _players_container.get_node_or_null(str(peer_id))
 	if player_node == null:
-		print("%s: Pickup request failed - player not found: %d" % [
-			_get_map_type_name(), peer_id
-		])
+		print("%s: Pickup request failed - player not found: %d" % [_get_map_type_name(), peer_id])
 		return
 
-	var distance: float = player_node.global_position.distance_to(
-		world_item.global_position
-	)
+	var distance: float = player_node.global_position.distance_to(world_item.global_position)
 	if distance > PICKUP_RANGE:
-		print("%s: Pickup request failed - player too far: %.1f > %.1f" % [
-			_get_map_type_name(), distance, PICKUP_RANGE
-		])
+		print(
+			(
+				"%s: Pickup request failed - player too far: %.1f > %.1f"
+				% [_get_map_type_name(), distance, PICKUP_RANGE]
+			)
+		)
 		return
 
 	var item_id: StringName = world_item.item_id
@@ -506,9 +502,12 @@ func _add_pickup_to_inventory(item_id: StringName, quantity: int) -> void:
 	var overflow: int = InventoryManager.add_item(item_id, quantity)
 
 	if overflow > 0:
-		print("%s: Picked up %d %s, %d overflow" % [
-			_get_map_type_name(), quantity - overflow, item_id, overflow
-		])
+		print(
+			(
+				"%s: Picked up %d %s, %d overflow"
+				% [_get_map_type_name(), quantity - overflow, item_id, overflow]
+			)
+		)
 		if multiplayer.is_server():
 			_process_drop(1, str(item_id), overflow)
 		else:
@@ -530,9 +529,7 @@ func _process_drop(peer_id: int, item_id_str: String, quantity: int) -> void:
 	var player_node: Node3D = _players_container.get_node_or_null(str(peer_id))
 
 	if player_node == null:
-		print("%s: Drop request failed - player not found: %d" % [
-			_get_map_type_name(), peer_id
-		])
+		print("%s: Drop request failed - player not found: %d" % [_get_map_type_name(), peer_id])
 		return
 
 	var drop_pos: Vector3 = player_node.global_position
@@ -543,9 +540,7 @@ func _process_drop(peer_id: int, item_id_str: String, quantity: int) -> void:
 	var item_id: StringName = StringName(item_id_str)
 	var iid: String = _track_item_placement(item_id, drop_pos, quantity)
 	_spawn_item_at(item_id, drop_pos, quantity, iid)
-	print("%s: Dropped %d %s at %s" % [
-		_get_map_type_name(), quantity, item_id, drop_pos
-	])
+	print("%s: Dropped %d %s at %s" % [_get_map_type_name(), quantity, item_id, drop_pos])
 
 
 func _on_drop_requested(item_id: StringName, quantity: int) -> void:
@@ -570,6 +565,7 @@ func _on_pickup_item_exiting(item_path: String) -> void:
 # =============================================================================
 # These are connected by _connect_shared_signals() but have map-specific logic.
 # Subclasses MUST provide implementations.
+
 
 func _on_gateway_configured(
 	_generation_seed: int, _field_name: String, _pearl_type: StringName

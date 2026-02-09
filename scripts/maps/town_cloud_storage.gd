@@ -36,15 +36,17 @@ func _initialize_empty() -> void:
 	# Initialize 4 empty gateway slots
 	var gateways: Array = _state["gateways"]
 	for i: int in range(4):
-		gateways.append({
-			"id": i,
-			"link_type": "none",  # "none" or "field" (towns only link to fields)
-			"linked_lobby_id": "0",  # Store as string to preserve precision (cached, may be stale)
-			"linked_map_name": "",
-			"generation_seed": 0,
-			"pearl_type": "",
-			"linked_gateway_id": -1  # Which field gateway this town gateway connects to
-		})
+		gateways.append(
+			{
+				"id": i,
+				"link_type": "none",  # "none" or "field" (towns only link to fields)
+				"linked_lobby_id": "0",  # Store as string to preserve precision (cached, may be stale)
+				"linked_map_name": "",
+				"generation_seed": 0,
+				"pearl_type": "",
+				"linked_gateway_id": -1  # Which field gateway this town gateway connects to
+			}
+		)
 
 
 func _setup_save_timer(parent: Node) -> void:
@@ -79,6 +81,7 @@ func flush() -> void:
 # =============================================================================
 # Public API
 # =============================================================================
+
 
 ## Check if this is a newly created town (no existing save)
 func is_new_town() -> bool:
@@ -120,8 +123,13 @@ func get_gateway(gateway_id: int) -> Dictionary:
 
 ## Set gateway configuration (seed, name, and pearl type, no lobby yet)
 ## linked_gateway_id specifies which field gateway this town gateway connects to
-func set_gateway_config(gateway_id: int, field_seed: int, map_name: String,
-						pearl_type: StringName = &"", linked_gateway_id: int = -1) -> void:
+func set_gateway_config(
+	gateway_id: int,
+	field_seed: int,
+	map_name: String,
+	pearl_type: StringName = &"",
+	linked_gateway_id: int = -1
+) -> void:
 	var gateways_variant: Variant = _state.get("gateways", [])
 	if not gateways_variant is Array:
 		return
@@ -142,8 +150,9 @@ func set_gateway_config(gateway_id: int, field_seed: int, map_name: String,
 
 ## Set gateway link and queue save
 ## linked_gateway_id specifies which field gateway this town gateway connects to
-func set_gateway_link(gateway_id: int, lobby_id: int, map_name: String,
-					  linked_gateway_id: int = -1) -> void:
+func set_gateway_link(
+	gateway_id: int, lobby_id: int, map_name: String, linked_gateway_id: int = -1
+) -> void:
 	var gateways_variant: Variant = _state.get("gateways", [])
 	if not gateways_variant is Array:
 		return
@@ -199,6 +208,7 @@ func clear_gateway_link(gateway_id: int) -> void:
 # Linked Field State API
 # =============================================================================
 
+
 ## Get linked field CRDT state by generation seed (returns null if not found).
 ## Auto-migrates old snapshot format to CRDT on first read.
 func get_linked_field(generation_seed: int) -> Variant:
@@ -221,13 +231,9 @@ func get_linked_field(generation_seed: int) -> Variant:
 	# Auto-migrate old snapshot format to CRDT
 	if not data.has("format_version"):
 		var pearl_str: String = data.get("pearl_type", "")
-		var pearl_type: StringName = (
-			StringName(pearl_str) if not pearl_str.is_empty() else &""
-		)
-		var migrated: Dictionary = (
-			FieldCloudPersistence.migrate_snapshot_to_crdt(
-				data, generation_seed, pearl_type
-			)
+		var pearl_type: StringName = StringName(pearl_str) if not pearl_str.is_empty() else &""
+		var migrated: Dictionary = FieldCloudPersistence.migrate_snapshot_to_crdt(
+			data, generation_seed, pearl_type
 		)
 		linked_fields[seed_key] = migrated
 		_queue_save()
@@ -275,11 +281,13 @@ func set_linked_field(
 		"gateways": gateways.duplicate(true)
 	}
 	print(
-		("TownCloudStorage: Saved linked field CRDT for seed %d "
-		+ "(%d removed, %d placed, %d gateways)") % [
-			generation_seed, removed_items.size(),
-			placed_items.size(), gateways.size()
-		]
+		(
+			(
+				"TownCloudStorage: Saved linked field CRDT for seed %d "
+				+ "(%d removed, %d placed, %d gateways)"
+			)
+			% [generation_seed, removed_items.size(), placed_items.size(), gateways.size()]
+		)
 	)
 	_queue_save()
 
@@ -309,59 +317,44 @@ func merge_linked_field(
 			if not data.has("format_version"):
 				var pearl_str: String = data.get("pearl_type", "")
 				var pearl_type: StringName = (
-					StringName(pearl_str)
-					if not pearl_str.is_empty() else &""
+					StringName(pearl_str) if not pearl_str.is_empty() else &""
 				)
 				data = FieldCloudPersistence.migrate_snapshot_to_crdt(
 					data, generation_seed, pearl_type
 				)
 				linked_fields[seed_key] = data
 			# Union merge removed_items
-			var stored_removed: Dictionary = data.get(
-				"removed_items", {}
-			)
+			var stored_removed: Dictionary = data.get("removed_items", {})
 			for key: String in incoming_removed:
 				if not stored_removed.has(key):
 					stored_removed[key] = incoming_removed[key]
 			data["removed_items"] = stored_removed
 			# Union merge placed_items
-			var stored_placed: Dictionary = data.get(
-				"placed_items", {}
-			)
+			var stored_placed: Dictionary = data.get("placed_items", {})
 			for key: String in incoming_placed:
 				if not stored_placed.has(key):
 					stored_placed[key] = incoming_placed[key]
 			data["placed_items"] = stored_placed
 			# Per-slot max for gateway_versions
-			var stored_gv: Variant = data.get(
-				"gateway_versions", [0, 0, 0, 0]
-			)
+			var stored_gv: Variant = data.get("gateway_versions", [0, 0, 0, 0])
 			if stored_gv is Array:
 				@warning_ignore("unsafe_cast")
 				var gv_arr: Array = stored_gv as Array
-				for i: int in range(
-					mini(gv_arr.size(), incoming_gw_versions.size())
-				):
+				for i: int in range(mini(gv_arr.size(), incoming_gw_versions.size())):
 					# gv_arr elements are Variant from JSON; safe after Array type check
 					@warning_ignore("unsafe_call_argument")
 					if incoming_gw_versions[i] > int(gv_arr[i]):
 						gv_arr[i] = incoming_gw_versions[i]
 						# Replace gateway at this slot if available
 						if i < incoming_gateways.size():
-							var stored_gws: Variant = data.get(
-								"gateways", []
-							)
+							var stored_gws: Variant = data.get("gateways", [])
 							if stored_gws is Array:
 								@warning_ignore("unsafe_cast")
 								var gws_arr: Array = stored_gws as Array
 								while gws_arr.size() <= i:
 									gws_arr.append({})
-								gws_arr[i] = incoming_gateways[i].duplicate(
-									true
-								)
-			data["last_modified"] = (
-				Time.get_datetime_string_from_system(true)
-			)
+								gws_arr[i] = incoming_gateways[i].duplicate(true)
+			data["last_modified"] = (Time.get_datetime_string_from_system(true))
 	else:
 		# New entry — store as-is
 		linked_fields[seed_key] = {
@@ -375,10 +368,7 @@ func merge_linked_field(
 			"gateways": incoming_gateways.duplicate(true)
 		}
 
-	print(
-		"TownCloudStorage: Merged linked field CRDT for seed %d"
-		% generation_seed
-	)
+	print("TownCloudStorage: Merged linked field CRDT for seed %d" % generation_seed)
 	_queue_save()
 
 
@@ -483,6 +473,7 @@ func remove_entity(match_criteria: Dictionary) -> bool:
 # =============================================================================
 # Load Implementation
 # =============================================================================
+
 
 func load_state() -> void:
 	_is_new_town = false
@@ -611,17 +602,29 @@ func _load_from_dict(data: Dictionary) -> void:
 					gw_dict["link_type"] = "field" if seed_val > 0 else "none"
 				state_gateways.append(gw_dict)
 			else:
-				state_gateways.append({
-					"id": i, "link_type": "none", "linked_lobby_id": "0",
-					"linked_map_name": "", "generation_seed": 0, "pearl_type": "",
-					"linked_gateway_id": -1
-				})
+				state_gateways.append(
+					{
+						"id": i,
+						"link_type": "none",
+						"linked_lobby_id": "0",
+						"linked_map_name": "",
+						"generation_seed": 0,
+						"pearl_type": "",
+						"linked_gateway_id": -1
+					}
+				)
 		else:
-			state_gateways.append({
-				"id": i, "link_type": "none", "linked_lobby_id": "0",
-				"linked_map_name": "", "generation_seed": 0, "pearl_type": "",
-				"linked_gateway_id": -1
-			})
+			state_gateways.append(
+				{
+					"id": i,
+					"link_type": "none",
+					"linked_lobby_id": "0",
+					"linked_map_name": "",
+					"generation_seed": 0,
+					"pearl_type": "",
+					"linked_gateway_id": -1
+				}
+			)
 
 	# If version changed, queue a save
 	if version < SAVE_VERSION:
@@ -631,6 +634,7 @@ func _load_from_dict(data: Dictionary) -> void:
 # =============================================================================
 # Save Implementation
 # =============================================================================
+
 
 func _do_save() -> void:
 	if not SteamManager.is_steam_initialized:
@@ -670,9 +674,12 @@ func _do_save() -> void:
 	var data_size: int = json_string.to_utf8_buffer().size()
 
 	if data_size > available_bytes:
-		push_warning("TownCloudStorage: Not enough Cloud storage (need %d, have %d)" % [
-			data_size, available_bytes
-		])
+		push_warning(
+			(
+				"TownCloudStorage: Not enough Cloud storage (need %d, have %d)"
+				% [data_size, available_bytes]
+			)
+		)
 		save_completed.emit(false)
 		return
 
@@ -693,6 +700,7 @@ func _do_save() -> void:
 # =============================================================================
 # Helpers
 # =============================================================================
+
 
 static func _extract_file_buffer(file_data: Variant) -> PackedByteArray:
 	if file_data is PackedByteArray:

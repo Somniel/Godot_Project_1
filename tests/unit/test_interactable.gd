@@ -33,9 +33,7 @@ func test_interact_emits_signal() -> void:
 
 	_interactable.interact(mock_player)
 
-	assert_signal_emitted_with_parameters(
-		_interactable, "interacted", [mock_player]
-	)
+	assert_signal_emitted_with_parameters(_interactable, "interacted", [mock_player])
 
 
 func test_show_prompt_makes_label_visible() -> void:

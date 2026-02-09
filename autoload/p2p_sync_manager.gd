@@ -24,9 +24,7 @@ func _process(_delta: float) -> void:
 
 
 ## Send CRDT state to a specific Steam user via P2P.
-func send_crdt_state(
-	target_steam_id: int, generation_seed: int, state: Dictionary
-) -> bool:
+func send_crdt_state(target_steam_id: int, generation_seed: int, state: Dictionary) -> bool:
 	var steam: Object = SteamManager.get_steam()
 	if steam == null:
 		return false
@@ -43,41 +41,34 @@ func send_crdt_state(
 
 	if data.size() > MAX_MESSAGE_SIZE:
 		push_warning(
-			"P2PSyncManager: Message too large (%d bytes) for seed %d"
-			% [data.size(), generation_seed]
+			(
+				"P2PSyncManager: Message too large (%d bytes) for seed %d"
+				% [data.size(), generation_seed]
+			)
 		)
 		return false
 
 	# k_EP2PSendReliable = 2
 	@warning_ignore("unsafe_method_access")
-	var success: bool = steam.sendP2PPacket(
-		target_steam_id, data, 2, CHANNEL_FIELD_SYNC
-	)
+	var success: bool = steam.sendP2PPacket(target_steam_id, data, 2, CHANNEL_FIELD_SYNC)
 
 	if success:
 		print(
-			"P2PSyncManager: Sent CRDT state to %d for seed %d"
-			% [target_steam_id, generation_seed]
+			"P2PSyncManager: Sent CRDT state to %d for seed %d" % [target_steam_id, generation_seed]
 		)
 	else:
-		push_warning(
-			"P2PSyncManager: Failed to send P2P to %d" % target_steam_id
-		)
+		push_warning("P2PSyncManager: Failed to send P2P to %d" % target_steam_id)
 	return success
 
 
 ## Request CRDT state from a specific Steam user.
-func request_crdt_state(
-	target_steam_id: int, generation_seed: int
-) -> bool:
+func request_crdt_state(target_steam_id: int, generation_seed: int) -> bool:
 	var steam: Object = SteamManager.get_steam()
 	if steam == null:
 		return false
 
 	var message: Dictionary = {
-		"type": MSG_CRDT_REQUEST,
-		"seed": generation_seed,
-		"sender": SteamManager.get_steam_id()
+		"type": MSG_CRDT_REQUEST, "seed": generation_seed, "sender": SteamManager.get_steam_id()
 	}
 
 	var json: String = JSON.stringify(message)
@@ -85,14 +76,14 @@ func request_crdt_state(
 
 	# k_EP2PSendReliable = 2
 	@warning_ignore("unsafe_method_access")
-	var success: bool = steam.sendP2PPacket(
-		target_steam_id, data, 2, CHANNEL_FIELD_SYNC
-	)
+	var success: bool = steam.sendP2PPacket(target_steam_id, data, 2, CHANNEL_FIELD_SYNC)
 
 	if success:
 		print(
-			"P2PSyncManager: Requested CRDT state from %d for seed %d"
-			% [target_steam_id, generation_seed]
+			(
+				"P2PSyncManager: Requested CRDT state from %d for seed %d"
+				% [target_steam_id, generation_seed]
+			)
 		)
 	return success
 
@@ -108,9 +99,7 @@ func _poll_p2p_messages() -> void:
 	var available: int = steam.getAvailableP2PPacketSize(CHANNEL_FIELD_SYNC)
 	while available > 0:
 		@warning_ignore("unsafe_method_access")
-		var packet: Dictionary = steam.readP2PPacket(
-			available, CHANNEL_FIELD_SYNC
-		)
+		var packet: Dictionary = steam.readP2PPacket(available, CHANNEL_FIELD_SYNC)
 
 		if packet.is_empty():
 			break
@@ -126,9 +115,7 @@ func _poll_p2p_messages() -> void:
 		available = steam.getAvailableP2PPacketSize(CHANNEL_FIELD_SYNC)
 
 
-func _handle_p2p_packet(
-	sender_steam_id: int, data: PackedByteArray
-) -> void:
+func _handle_p2p_packet(sender_steam_id: int, data: PackedByteArray) -> void:
 	if data.is_empty():
 		return
 
@@ -136,10 +123,7 @@ func _handle_p2p_packet(
 	var parsed: Variant = JSON.parse_string(json_str)
 
 	if not parsed is Dictionary:
-		push_warning(
-			"P2PSyncManager: Invalid P2P message from %d"
-			% sender_steam_id
-		)
+		push_warning("P2PSyncManager: Invalid P2P message from %d" % sender_steam_id)
 		return
 
 	@warning_ignore("unsafe_cast")
@@ -152,21 +136,22 @@ func _handle_p2p_packet(
 			var state: Variant = message.get("state", {})
 			if state is Dictionary:
 				@warning_ignore("unsafe_cast")
-				crdt_state_received.emit(
-					sender_steam_id, generation_seed, state as Dictionary
-				)
+				crdt_state_received.emit(sender_steam_id, generation_seed, state as Dictionary)
 				print(
-					("P2PSyncManager: Received CRDT state from %d "
-					+ "for seed %d") % [sender_steam_id, generation_seed]
+					(
+						("P2PSyncManager: Received CRDT state from %d " + "for seed %d")
+						% [sender_steam_id, generation_seed]
+					)
 				)
 		MSG_CRDT_REQUEST:
 			crdt_request_received.emit(sender_steam_id, generation_seed)
 			print(
-				("P2PSyncManager: Received CRDT request from %d "
-				+ "for seed %d") % [sender_steam_id, generation_seed]
+				(
+					("P2PSyncManager: Received CRDT request from %d " + "for seed %d")
+					% [sender_steam_id, generation_seed]
+				)
 			)
 		_:
 			push_warning(
-				"P2PSyncManager: Unknown message type '%s' from %d"
-				% [msg_type, sender_steam_id]
+				"P2PSyncManager: Unknown message type '%s' from %d" % [msg_type, sender_steam_id]
 			)

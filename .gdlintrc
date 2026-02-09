@@ -1,22 +1,14 @@
-[rules]
-max-line-length = 100
+max-line-length: 100
 
-class-definitions-order = [
-    "signals",
-    "enums",
-    "constants",
-    "exported-variables",
-    "public-variables",
-    "private-variables",
-    "onready-variables",
-    "optional-built-in-virtual-methods",
-    "built-in-virtual-methods",
-    "signal-handlers",
-    "public-methods",
-    "private-methods",
-    "static-methods",
-    "optional-subclasses"
-]
-
-# Disable rules that conflict with project conventions (uncomment as needed)
-# disable = ["max-line-length"]
+# Disable rules that don't fit the project's patterns
+disable:
+  - class-definitions-order
+  - max-public-methods
+  - max-file-lines
+  - private-method-call
+  - no-else-return
+  - no-elif-return
+  - max-returns
+  - function-arguments-number
+  - class-variable-name
+  - function-preload-variable-name

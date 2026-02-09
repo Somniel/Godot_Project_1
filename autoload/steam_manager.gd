@@ -26,7 +26,13 @@ func _init() -> void:
 		# Fall back to environment variable
 		var env_app_id: String = OS.get_environment("STEAM_APP_ID")
 		if env_app_id.is_empty() or not env_app_id.is_valid_int():
-			push_warning("SteamManager: No Steam App ID configured. Set steam/initialization/app_id in override.cfg or STEAM_APP_ID environment variable.")
+			push_warning(
+				(
+					"SteamManager: No Steam App ID configured. "
+					+ "Set steam/initialization/app_id in override.cfg "
+					+ "or STEAM_APP_ID environment variable."
+				)
+			)
 			return
 		APP_ID = env_app_id.to_int()
 

@@ -55,9 +55,7 @@ func test_request_lobby_list_without_steam() -> void:
 	LobbyManager.request_lobby_list()
 
 	# Should emit empty list
-	assert_signal_emitted_with_parameters(
-		LobbyManager, "lobby_list_received", [[]]
-	)
+	assert_signal_emitted_with_parameters(LobbyManager, "lobby_list_received", [[]])
 
 
 func test_set_lobby_metadata_without_lobby() -> void:
@@ -113,11 +111,7 @@ func test_find_field_by_seed_without_steam() -> void:
 
 	# Use Array to capture result — lambdas copy local ints by value
 	var result: Array[int] = [-1]
-	LobbyManager.find_field_by_seed(12345, func(
-		lobby_id: int
-	) -> void:
-		result[0] = lobby_id
-	)
+	LobbyManager.find_field_by_seed(12345, func(lobby_id: int) -> void: result[0] = lobby_id)
 
 	assert_eq(result[0], 0, "Should callback with 0 without Steam")
 
@@ -133,20 +127,10 @@ func test_find_field_by_seed_blocked_by_active_query() -> void:
 
 	# Use Array to capture result — lambdas copy local ints by value
 	var result: Array[int] = [-1]
-	LobbyManager.find_field_by_seed(99999, func(
-		lobby_id: int
-	) -> void:
-		result[0] = lobby_id
-	)
+	LobbyManager.find_field_by_seed(99999, func(lobby_id: int) -> void: result[0] = lobby_id)
 
-	assert_eq(
-		result[0], 0,
-		"Should callback with 0 when another query is active"
-	)
-	assert_false(
-		LobbyManager._is_finding_field,
-		"Should not set _is_finding_field when blocked"
-	)
+	assert_eq(result[0], 0, "Should callback with 0 when another query is active")
+	assert_false(LobbyManager._is_finding_field, "Should not set _is_finding_field when blocked")
 
 	# Clean up
 	LobbyManager._is_finding_lobby = false
@@ -167,9 +151,7 @@ func test_create_staged_lobby_without_steam() -> void:
 
 func test_set_staged_metadata_without_staged_lobby() -> void:
 	# Should return false when no staged lobby exists
-	var result: bool = LobbyManager.set_staged_lobby_metadata(
-		"key", "value"
-	)
+	var result: bool = LobbyManager.set_staged_lobby_metadata("key", "value")
 	assert_false(result, "Should fail without a staged lobby")
 
 
@@ -178,7 +160,8 @@ func test_promote_without_staged_lobby() -> void:
 	var before: int = LobbyManager.current_lobby_id
 	LobbyManager.promote_staged_lobby()
 	assert_eq(
-		LobbyManager.current_lobby_id, before,
+		LobbyManager.current_lobby_id,
+		before,
 		"Should not change current_lobby_id without staged lobby"
 	)
 	# push_warning is tracked as engine error in editor but not headless;
@@ -191,6 +174,5 @@ func test_abandon_staged_lobby_without_lobby() -> void:
 	# Should be a safe no-op
 	LobbyManager.abandon_staged_lobby()
 	assert_eq(
-		LobbyManager._staged_lobby_id, 0,
-		"Should remain 0 after abandon with no staged lobby"
+		LobbyManager._staged_lobby_id, 0, "Should remain 0 after abandon with no staged lobby"
 	)

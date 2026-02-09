@@ -62,6 +62,7 @@ func flush() -> void:
 # InventoryStorage Interface
 # =============================================================================
 
+
 func load_inventory() -> void:
 	if not SteamManager.is_steam_initialized:
 		_initialize_empty()
@@ -138,6 +139,7 @@ func get_slots() -> Array[Dictionary]:
 # Save Implementation
 # =============================================================================
 
+
 func _do_save() -> void:
 	if not SteamManager.is_steam_initialized:
 		push_warning("SteamCloudStorage: Steam not initialized, cannot save")
@@ -181,23 +183,22 @@ func _do_save() -> void:
 		if slot.is_empty():
 			slots_array.append(null)
 		else:
-			slots_array.append({
-				"item_id": str(_get_slot_item_id(slot)),
-				"quantity": _get_slot_quantity(slot)
-			})
+			slots_array.append(
+				{"item_id": str(_get_slot_item_id(slot)), "quantity": _get_slot_quantity(slot)}
+			)
 
-	var save_data: Dictionary = {
-		"version": SAVE_VERSION,
-		"slots": slots_array
-	}
+	var save_data: Dictionary = {"version": SAVE_VERSION, "slots": slots_array}
 
 	var json_string: String = JSON.stringify(save_data)
 	var data_size: int = json_string.to_utf8_buffer().size()
 
 	if data_size > available_bytes:
-		push_warning("SteamCloudStorage: Not enough Cloud storage (need %d, have %d)" % [
-			data_size, available_bytes
-		])
+		push_warning(
+			(
+				"SteamCloudStorage: Not enough Cloud storage (need %d, have %d)"
+				% [data_size, available_bytes]
+			)
+		)
 		save_completed.emit(false)
 		return
 
@@ -216,6 +217,7 @@ func _do_save() -> void:
 # =============================================================================
 # Load Helpers
 # =============================================================================
+
 
 func _load_from_dict(data: Dictionary) -> void:
 	var version: int = data.get("version", 1)
@@ -255,6 +257,7 @@ func _migrate_item_id(item_id: StringName) -> StringName:
 # =============================================================================
 # Dictionary Helper Functions
 # =============================================================================
+
 
 static func _get_slot_item_id(slot: Dictionary) -> StringName:
 	## Safely extract item_id from slot dictionary.

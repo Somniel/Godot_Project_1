@@ -21,15 +21,17 @@ func load_gateways() -> void:
 		var gen_seed: int = gw_dict.get("generation_seed", 0)
 		var has_link: bool = lobby_id > 0 or gen_seed > 0
 
-		gateways.append({
-			"id": gw_dict.get("id", i),
-			"has_link": has_link,
-			"linked_lobby_id": lobby_id,
-			"linked_map_name": gw_dict.get("linked_map_name", ""),
-			"generation_seed": gen_seed,
-			"pearl_type": gw_dict.get("pearl_type", ""),
-			"town_name": town_name
-		})
+		gateways.append(
+			{
+				"id": gw_dict.get("id", i),
+				"has_link": has_link,
+				"linked_lobby_id": lobby_id,
+				"linked_map_name": gw_dict.get("linked_map_name", ""),
+				"generation_seed": gen_seed,
+				"pearl_type": gw_dict.get("pearl_type", ""),
+				"town_name": town_name
+			}
+		)
 
 	gateways_loaded.emit(gateways)
 

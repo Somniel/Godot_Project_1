@@ -88,6 +88,12 @@ func _ready() -> void:
 	@warning_ignore("return_value_discarded")
 	LobbyManager.staged_lobby_failed.connect(_on_staged_lobby_failed)
 
+	# Clear travel flag on connection failure
+	@warning_ignore("return_value_discarded")
+	NetworkManager.connection_failed.connect(_on_connection_failed)
+	@warning_ignore("return_value_discarded")
+	LobbyManager.lobby_join_failed.connect(_on_lobby_join_failed)
+
 
 func _exit_tree() -> void:
 	# Flush any pending town storage saves before shutdown
@@ -100,23 +106,20 @@ func _exit_tree() -> void:
 		NetworkManager.client_started.disconnect(_on_client_started)
 	if NetworkManager.disconnected.is_connected(_on_disconnected):
 		NetworkManager.disconnected.disconnect(_on_disconnected)
-	if LobbyManager.staged_lobby_created.is_connected(
-		_on_staged_lobby_created
-	):
-		LobbyManager.staged_lobby_created.disconnect(
-			_on_staged_lobby_created
-		)
-	if LobbyManager.staged_lobby_failed.is_connected(
-		_on_staged_lobby_failed
-	):
-		LobbyManager.staged_lobby_failed.disconnect(
-			_on_staged_lobby_failed
-		)
+	if LobbyManager.staged_lobby_created.is_connected(_on_staged_lobby_created):
+		LobbyManager.staged_lobby_created.disconnect(_on_staged_lobby_created)
+	if LobbyManager.staged_lobby_failed.is_connected(_on_staged_lobby_failed):
+		LobbyManager.staged_lobby_failed.disconnect(_on_staged_lobby_failed)
+	if NetworkManager.connection_failed.is_connected(_on_connection_failed):
+		NetworkManager.connection_failed.disconnect(_on_connection_failed)
+	if LobbyManager.lobby_join_failed.is_connected(_on_lobby_join_failed):
+		LobbyManager.lobby_join_failed.disconnect(_on_lobby_join_failed)
 
 
 # =============================================================================
 # Public API
 # =============================================================================
+
 
 ## Get the current map type ("town", "field", or "")
 func get_current_map_type() -> String:
@@ -202,8 +205,11 @@ func get_target_gateway_id() -> int:
 ## link_type: "field" or "town" - the type of link used for travel
 ## owner_steam_id: Steam ID of the town owner (for town links)
 func set_travel_source(
-	lobby_id: int, gateway_id: int, target_gateway_id: int = -1,
-	link_type: String = "", owner_steam_id: int = 0
+	lobby_id: int,
+	gateway_id: int,
+	target_gateway_id: int = -1,
+	link_type: String = "",
+	owner_steam_id: int = 0
 ) -> void:
 	_source_lobby_id = lobby_id
 	_source_gateway_id = gateway_id
@@ -247,39 +253,29 @@ func cache_current_field(
 
 	# Get field metadata from current lobby
 	var lobby_id: int = _current_field_lobby_id
-	var seed_str: String = LobbyManager.get_lobby_metadata(
-		lobby_id, "generation_seed"
-	)
-	var origin_str: String = LobbyManager.get_lobby_metadata(
-		lobby_id, "origin_lobby_id"
-	)
-	var gateway_str: String = LobbyManager.get_lobby_metadata(
-		lobby_id, "origin_gateway"
-	)
-	var origin_name: String = LobbyManager.get_lobby_metadata(
-		lobby_id, "origin_map_name"
-	)
-	var pearl_str: String = LobbyManager.get_lobby_metadata(
-		lobby_id, "pearl_type"
-	)
+	var seed_str: String = LobbyManager.get_lobby_metadata(lobby_id, "generation_seed")
+	var origin_str: String = LobbyManager.get_lobby_metadata(lobby_id, "origin_lobby_id")
+	var gateway_str: String = LobbyManager.get_lobby_metadata(lobby_id, "origin_gateway")
+	var origin_name: String = LobbyManager.get_lobby_metadata(lobby_id, "origin_map_name")
+	var pearl_str: String = LobbyManager.get_lobby_metadata(lobby_id, "pearl_type")
 
-	var gen_seed: int = (
-		seed_str.to_int() if not seed_str.is_empty() else 0
-	)
-	var origin_lobby: int = (
-		origin_str.to_int() if not origin_str.is_empty() else 0
-	)
-	var origin_gateway: int = (
-		gateway_str.to_int() if not gateway_str.is_empty() else 0
-	)
-	var pearl_type: StringName = (
-		StringName(pearl_str) if not pearl_str.is_empty() else &""
-	)
+	var gen_seed: int = seed_str.to_int() if not seed_str.is_empty() else 0
+	var origin_lobby: int = origin_str.to_int() if not origin_str.is_empty() else 0
+	var origin_gateway: int = gateway_str.to_int() if not gateway_str.is_empty() else 0
+	var pearl_type: StringName = StringName(pearl_str) if not pearl_str.is_empty() else &""
 
 	_field_cache.cache_field(
-		lobby_id, gen_seed, origin_lobby, origin_gateway,
-		origin_name, pearl_type, removed_items, placed_items,
-		gateway_versions, gateways, modifier_steam_id
+		lobby_id,
+		gen_seed,
+		origin_lobby,
+		origin_gateway,
+		origin_name,
+		pearl_type,
+		removed_items,
+		placed_items,
+		gateway_versions,
+		gateways,
+		modifier_steam_id
 	)
 
 
@@ -293,9 +289,12 @@ func restore_cached_field(old_lobby_id: int) -> bool:
 	if state == null:
 		return false
 
-	print("MapManager: Restoring cached field (old lobby %d, seed %d, pearl %s)" % [
-		old_lobby_id, state.generation_seed, state.pearl_type
-	])
+	print(
+		(
+			"MapManager: Restoring cached field (old lobby %d, seed %d, pearl %s)"
+			% [old_lobby_id, state.generation_seed, state.pearl_type]
+		)
+	)
 
 	# Store restoration params
 	_pending_field_seed = state.generation_seed
@@ -306,6 +305,9 @@ func restore_cached_field(old_lobby_id: int) -> bool:
 	_creating_field = true
 	_restoring_field = true
 	_restoring_field_old_lobby_id = old_lobby_id
+
+	# Mark intentional travel so scenes don't treat disconnect as a drop
+	is_traveling = true
 
 	# Leave current lobby and create a new one for the restored field
 	NetworkManager.disconnect_peer()
@@ -374,6 +376,9 @@ func travel_to_field(lobby_id: int) -> void:
 		_own_town_lobby_id = LobbyManager.current_lobby_id
 		print("MapManager: Town %d will be unjoinable while away" % _own_town_lobby_id)
 
+	# Mark intentional travel so scenes don't treat disconnect as a drop
+	is_traveling = true
+
 	# Leave current lobby and join the field
 	NetworkManager.disconnect_peer()
 	LobbyManager.leave_lobby()
@@ -388,6 +393,9 @@ func travel_to_town(lobby_id: int) -> void:
 
 	print("MapManager: Traveling to town %d..." % lobby_id)
 	travel_started.emit(lobby_id)
+
+	# Mark intentional travel so scenes don't treat disconnect as a drop
+	is_traveling = true
 
 	# Leave current field
 	NetworkManager.disconnect_peer()
@@ -410,6 +418,9 @@ func travel_to_player_town(owner_steam_id: int) -> void:
 		return
 
 	print("MapManager: Traveling to player %d's town..." % owner_steam_id)
+
+	# Mark intentional travel so scenes don't treat disconnect as a drop
+	is_traveling = true
 
 	# Disconnect from current map
 	NetworkManager.disconnect_peer()
@@ -435,9 +446,10 @@ func create_field(
 	origin_owner_steam_id: int = 0
 ) -> void:
 	print(
-		"MapManager: Creating field with seed %d, pearl %s "
-		% [generation_seed, pearl_type]
-		+ "from gateway %d..." % origin_gateway
+		(
+			"MapManager: Creating field with seed %d, pearl %s " % [generation_seed, pearl_type]
+			+ "from gateway %d..." % origin_gateway
+		)
 	)
 
 	# Store field creation params for when lobby is created
@@ -452,10 +464,7 @@ func create_field(
 	# If we're the town host, save the town lobby ID so we can return
 	if is_town_host():
 		_own_town_lobby_id = LobbyManager.current_lobby_id
-		print(
-			"MapManager: Saving town lobby %d for return"
-			% _own_town_lobby_id
-		)
+		print("MapManager: Saving town lobby %d for return" % _own_town_lobby_id)
 
 	if LobbyManager.current_lobby_id != 0:
 		# Staged path: create invisible lobby while still connected
@@ -499,12 +508,18 @@ var _pending_field_crdt: Dictionary = {}
 ## Whether staged field metadata has already been set (skip in _on_host_started)
 var _staged_metadata_done: bool = false
 
+## True while an intentional travel is in progress.
+## Scenes check this to avoid treating the disconnect as a server drop.
+var is_traveling: bool = false
 
 # =============================================================================
 # Signal Handlers
 # =============================================================================
 
+
 func _on_host_started() -> void:
+	is_traveling = false
+
 	# Determine map type from pending state or lobby metadata
 	if _creating_field:
 		_current_map_type = MAP_TYPE_FIELD
@@ -525,6 +540,8 @@ func _on_host_started() -> void:
 
 
 func _on_client_started() -> void:
+	is_traveling = false
+
 	# Read map type from lobby metadata
 	var server_type: String = LobbyManager.get_lobby_metadata(
 		LobbyManager.current_lobby_id, "server_type"
@@ -561,10 +578,7 @@ func _on_staged_lobby_created(lobby_id: int) -> void:
 	if not _creating_field:
 		return
 
-	print(
-		"MapManager: Staged field lobby %d created, setting metadata"
-		% lobby_id
-	)
+	print("MapManager: Staged field lobby %d created, setting metadata" % lobby_id)
 	_setup_staged_field_metadata(lobby_id)
 	_staged_metadata_done = true
 	staged_field_ready.emit(lobby_id)
@@ -575,9 +589,7 @@ func _on_staged_lobby_failed(reason: String) -> void:
 	if _creating_field:
 		_creating_field = false
 		_staged_metadata_done = false
-		push_warning(
-			"MapManager: Staged field creation failed: %s" % reason
-		)
+		push_warning("MapManager: Staged field creation failed: %s" % reason)
 
 
 func finish_staged_field_transition() -> void:
@@ -585,6 +597,7 @@ func finish_staged_field_transition() -> void:
 	## Called by the map scene (town.gd) after reporting the lobby ID back
 	## to the server (client path) or updating the gateway (host path).
 	print("MapManager: Finishing staged field transition")
+	is_traveling = true
 	NetworkManager.disconnect_peer()
 	# Leave current lobby but preserve the staged lobby for promotion
 	LobbyManager.leave_lobby(true)
@@ -597,18 +610,14 @@ func finish_staged_field_transition() -> void:
 # Metadata Setup
 # =============================================================================
 
+
 func _setup_town_metadata() -> void:
 	@warning_ignore("return_value_discarded")
 	LobbyManager.set_lobby_metadata("server_type", MAP_TYPE_TOWN)
 	@warning_ignore("return_value_discarded")
-	LobbyManager.set_lobby_metadata(
-		"server_name",
-		"%s's Town" % SteamManager.get_steam_username()
-	)
+	LobbyManager.set_lobby_metadata("server_name", "%s's Town" % SteamManager.get_steam_username())
 	@warning_ignore("return_value_discarded")
-	LobbyManager.set_lobby_metadata(
-		"owner_steam_id", str(SteamManager.get_steam_id())
-	)
+	LobbyManager.set_lobby_metadata("owner_steam_id", str(SteamManager.get_steam_id()))
 
 	_own_town_lobby_id = LobbyManager.current_lobby_id
 	_current_town_owner_id = SteamManager.get_steam_id()
@@ -630,9 +639,7 @@ func update_town_linked_seeds(town_storage: TownCloudStorage) -> void:
 	@warning_ignore("return_value_discarded")
 	LobbyManager.set_lobby_metadata("linked_seeds", ",".join(seeds))
 	if not seeds.is_empty():
-		print(
-			"MapManager: Advertised linked seeds: %s" % ",".join(seeds)
-		)
+		print("MapManager: Advertised linked seeds: %s" % ",".join(seeds))
 
 
 func _setup_field_metadata() -> void:
@@ -667,42 +674,26 @@ func _setup_staged_field_metadata(lobby_id: int) -> void:
 	## Mirrors _setup_field_metadata but uses set_staged_lobby_metadata
 	## since the staged lobby is not the current active lobby.
 	@warning_ignore("return_value_discarded")
-	LobbyManager.set_staged_lobby_metadata(
-		"server_type", MAP_TYPE_FIELD
-	)
+	LobbyManager.set_staged_lobby_metadata("server_type", MAP_TYPE_FIELD)
 	@warning_ignore("return_value_discarded")
-	LobbyManager.set_staged_lobby_metadata(
-		"server_name", "Field %d" % _pending_field_seed
-	)
+	LobbyManager.set_staged_lobby_metadata("server_name", "Field %d" % _pending_field_seed)
 	@warning_ignore("return_value_discarded")
-	LobbyManager.set_staged_lobby_metadata(
-		"origin_lobby_id", str(_pending_field_origin_lobby)
-	)
+	LobbyManager.set_staged_lobby_metadata("origin_lobby_id", str(_pending_field_origin_lobby))
 	@warning_ignore("return_value_discarded")
-	LobbyManager.set_staged_lobby_metadata(
-		"origin_gateway", str(_pending_field_origin_gateway)
-	)
+	LobbyManager.set_staged_lobby_metadata("origin_gateway", str(_pending_field_origin_gateway))
 	@warning_ignore("return_value_discarded")
-	LobbyManager.set_staged_lobby_metadata(
-		"generation_seed", str(_pending_field_seed)
-	)
+	LobbyManager.set_staged_lobby_metadata("generation_seed", str(_pending_field_seed))
 	@warning_ignore("return_value_discarded")
-	LobbyManager.set_staged_lobby_metadata(
-		"origin_map_name", _pending_field_origin_name
-	)
+	LobbyManager.set_staged_lobby_metadata("origin_map_name", _pending_field_origin_name)
 	@warning_ignore("return_value_discarded")
-	LobbyManager.set_staged_lobby_metadata(
-		"pearl_type", str(_pending_field_pearl_type)
-	)
+	LobbyManager.set_staged_lobby_metadata("pearl_type", str(_pending_field_pearl_type))
 
 	# Store origin owner Steam ID so field can determine ownership
 	var origin_owner: int = _pending_field_origin_owner
 	if origin_owner <= 0:
 		origin_owner = SteamManager.get_steam_id()
 	@warning_ignore("return_value_discarded")
-	LobbyManager.set_staged_lobby_metadata(
-		"origin_owner_steam_id", str(origin_owner)
-	)
+	LobbyManager.set_staged_lobby_metadata("origin_owner_steam_id", str(origin_owner))
 
 	# Track current field lobby for caching on exit
 	_current_field_lobby_id = lobby_id
@@ -755,6 +746,22 @@ func _change_to_current_scene() -> void:
 	get_tree().change_scene_to_file(scene_path)
 
 
+func _on_connection_failed(_reason: String) -> void:
+	if is_traveling:
+		is_traveling = false
+		push_warning("MapManager: Travel failed (connection error)")
+		@warning_ignore("return_value_discarded")
+		get_tree().change_scene_to_file(MAIN_MENU_PATH)
+
+
+func _on_lobby_join_failed(_reason: String) -> void:
+	if is_traveling:
+		is_traveling = false
+		push_warning("MapManager: Travel failed (lobby join error)")
+		@warning_ignore("return_value_discarded")
+		get_tree().change_scene_to_file(MAIN_MENU_PATH)
+
+
 func _on_town_lobby_found(lobby_id: int) -> void:
 	## Callback from find_lobby_by_owner when searching for another player's town.
 	if lobby_id > 0:
@@ -762,6 +769,7 @@ func _on_town_lobby_found(lobby_id: int) -> void:
 		LobbyManager.join_lobby(lobby_id)
 	else:
 		print("MapManager: Town not currently hosted")
+		is_traveling = false
 		# Return to main menu since we already disconnected
 		@warning_ignore("return_value_discarded")
 		get_tree().change_scene_to_file(MAIN_MENU_PATH)

@@ -149,10 +149,7 @@ func promote_staged_lobby() -> void:
 	is_host = true
 	_staged_lobby_id = 0
 
-	print(
-		"LobbyManager: Promoted staged lobby %d to active"
-		% current_lobby_id
-	)
+	print("LobbyManager: Promoted staged lobby %d to active" % current_lobby_id)
 
 	# Make the lobby publicly discoverable
 	@warning_ignore("unsafe_method_access")
@@ -268,22 +265,16 @@ func find_lobby_by_owner(steam_id: int, callback: Callable) -> void:
 
 	# Filter by owner_steam_id and server_type = town
 	@warning_ignore("unsafe_method_access")
-	_steam.addRequestLobbyListStringFilter(
-		"owner_steam_id", str(steam_id), LOBBY_COMPARISON_EQUAL
-	)
+	_steam.addRequestLobbyListStringFilter("owner_steam_id", str(steam_id), LOBBY_COMPARISON_EQUAL)
 	@warning_ignore("unsafe_method_access")
-	_steam.addRequestLobbyListStringFilter(
-		"server_type", "town", LOBBY_COMPARISON_EQUAL
-	)
+	_steam.addRequestLobbyListStringFilter("server_type", "town", LOBBY_COMPARISON_EQUAL)
 	@warning_ignore("unsafe_method_access")
 	_steam.addRequestLobbyListDistanceFilter(LOBBY_DISTANCE_WORLDWIDE)
 	@warning_ignore("unsafe_method_access")
 	_steam.requestLobbyList()
 
 
-func find_field_by_seed(
-	generation_seed: int, callback: Callable
-) -> void:
+func find_field_by_seed(generation_seed: int, callback: Callable) -> void:
 	## Find an active field lobby by generation seed.
 	## Queries Steam lobby list filtered by server_type and generation_seed.
 	## Calls callback(lobby_id: int) when done - 0 means not found.
@@ -295,19 +286,13 @@ func find_field_by_seed(
 	_find_field_seed = generation_seed
 	_is_finding_field = true
 
-	print(
-		"LobbyManager: Searching for field with seed %d..."
-		% generation_seed
-	)
+	print("LobbyManager: Searching for field with seed %d..." % generation_seed)
 
 	@warning_ignore("unsafe_method_access")
-	_steam.addRequestLobbyListStringFilter(
-		"server_type", "field", LOBBY_COMPARISON_EQUAL
-	)
+	_steam.addRequestLobbyListStringFilter("server_type", "field", LOBBY_COMPARISON_EQUAL)
 	@warning_ignore("unsafe_method_access")
 	_steam.addRequestLobbyListStringFilter(
-		"generation_seed", str(generation_seed),
-		LOBBY_COMPARISON_EQUAL
+		"generation_seed", str(generation_seed), LOBBY_COMPARISON_EQUAL
 	)
 	@warning_ignore("unsafe_method_access")
 	_steam.addRequestLobbyListDistanceFilter(LOBBY_DISTANCE_WORLDWIDE)
@@ -316,6 +301,7 @@ func find_field_by_seed(
 
 
 # Steam callback handlers
+
 
 func _on_lobby_created(result: int, lobby_id: int) -> void:
 	if result != 1:  # 1 = k_EResultOK
@@ -331,9 +317,7 @@ func _on_lobby_created(result: int, lobby_id: int) -> void:
 	if _is_creating_staged:
 		_is_creating_staged = false
 		_staged_lobby_id = lobby_id
-		print(
-			"LobbyManager: Staged lobby created (ID: %d)" % lobby_id
-		)
+		print("LobbyManager: Staged lobby created (ID: %d)" % lobby_id)
 		staged_lobby_created.emit(lobby_id)
 		return
 
@@ -343,9 +327,7 @@ func _on_lobby_created(result: int, lobby_id: int) -> void:
 	print("LobbyManager: Lobby created successfully (ID: %d)" % lobby_id)
 
 	# Set default metadata with sanitized username
-	var sanitized_name: String = Utils.sanitize_display_string(
-		SteamManager.get_steam_username()
-	)
+	var sanitized_name: String = Utils.sanitize_display_string(SteamManager.get_steam_username())
 	@warning_ignore("return_value_discarded")
 	set_lobby_metadata("server_name", "%s's Server" % sanitized_name)
 
@@ -380,8 +362,10 @@ func _on_lobby_match_list(lobbies: Array) -> void:
 				found_id = lobby_id as int
 				break  # First match (filters already applied)
 		print(
-			"LobbyManager: Find-by-seed result: %d (searched %d lobbies)"
-			% [found_id, lobbies.size()]
+			(
+				"LobbyManager: Find-by-seed result: %d (searched %d lobbies)"
+				% [found_id, lobbies.size()]
+			)
 		)
 		var cb: Callable = _find_field_callback
 		_find_field_callback = Callable()
@@ -398,9 +382,12 @@ func _on_lobby_match_list(lobbies: Array) -> void:
 				@warning_ignore("unsafe_cast")
 				found_id = lobby_id as int
 				break  # First match (filters already applied)
-		print("LobbyManager: Find-by-owner result: %d (searched %d lobbies)" % [
-			found_id, lobbies.size()
-		])
+		print(
+			(
+				"LobbyManager: Find-by-owner result: %d (searched %d lobbies)"
+				% [found_id, lobbies.size()]
+			)
+		)
 		var cb: Callable = _find_lobby_callback
 		_find_lobby_callback = Callable()
 		_find_lobby_steam_id = 0
@@ -417,6 +404,6 @@ func _on_lobby_data_update(success: int, lobby_id: int, _member_id: int) -> void
 	## success: 1 = success, 0 = failure (lobby doesn't exist or is not visible)
 	if lobby_id in _pending_lobby_data_requests:
 		_pending_lobby_data_requests.erase(lobby_id)
-		var exists: bool = (success == 1)
+		var exists: bool = success == 1
 		print("LobbyManager: Lobby %d data received (exists: %s)" % [lobby_id, exists])
 		lobby_data_received.emit(lobby_id, exists)

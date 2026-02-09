@@ -1,7 +1,6 @@
 extends Control
 ## Main menu scene handling host, browse, and quit actions.
 
-
 @onready var _status_label: Label = $VBoxContainer/StatusLabel
 @onready var _host_button: Button = $VBoxContainer/HostButton
 @onready var _browse_button: Button = $VBoxContainer/BrowseButton
@@ -130,6 +129,7 @@ func _set_multiplayer_buttons_enabled(enabled: bool) -> void:
 
 
 # Lobby browser functions
+
 
 func _show_lobby_browser() -> void:
 	_main_menu_container.visible = false

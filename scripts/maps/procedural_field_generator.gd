@@ -23,11 +23,7 @@ class FieldThemeConfig:
 	var obstacle_colors: Dictionary  # String (type) -> Color
 	var item_weights: Dictionary  # StringName (item_id) -> int (weight)
 
-	func _init(
-		p_ground: Color,
-		p_obstacles: Dictionary,
-		p_weights: Dictionary
-	) -> void:
+	func _init(p_ground: Color, p_obstacles: Dictionary, p_weights: Dictionary) -> void:
 		ground_color = p_ground
 		obstacle_colors = p_obstacles
 		item_weights = p_weights
@@ -41,61 +37,45 @@ static var _theme_configs_cache: Dictionary = {}
 static func _get_theme_configs() -> Dictionary:
 	if _theme_configs_cache.is_empty():
 		_theme_configs_cache = {
-			&"flame_pearl": FieldThemeConfig.new(
+			&"flame_pearl":
+			FieldThemeConfig.new(
 				Color(0.6, 0.25, 0.15),  # Red-brown ground
 				{
 					"rock": Color(0.25, 0.22, 0.2),  # Dark charcoal
 					"pillar": Color(0.3, 0.25, 0.22),  # Dark grey-brown
 					"crystal": Color(0.9, 0.5, 0.2)  # Orange glow
 				},
-				{
-					&"flame_pearl": 3,  # 3x weight
-					&"air_pearl": 1,
-					&"life_pearl": 1,
-					&"water_pearl": 1
-				}
+				{&"flame_pearl": 3, &"air_pearl": 1, &"life_pearl": 1, &"water_pearl": 1}  # 3x weight
 			),
-			&"air_pearl": FieldThemeConfig.new(
+			&"air_pearl":
+			FieldThemeConfig.new(
 				Color(0.75, 0.78, 0.82),  # White-grey ground
 				{
 					"rock": Color(0.55, 0.6, 0.7),  # Blue-grey
 					"pillar": Color(0.6, 0.65, 0.75),  # Light blue-grey
 					"crystal": Color(0.7, 0.85, 1.0)  # Ice blue
 				},
-				{
-					&"flame_pearl": 1,
-					&"air_pearl": 3,  # 3x weight
-					&"life_pearl": 1,
-					&"water_pearl": 1
-				}
+				{&"flame_pearl": 1, &"air_pearl": 3, &"life_pearl": 1, &"water_pearl": 1}  # 3x weight
 			),
-			&"life_pearl": FieldThemeConfig.new(
+			&"life_pearl":
+			FieldThemeConfig.new(
 				Color(0.35, 0.55, 0.28),  # Green ground
 				{
 					"rock": Color(0.45, 0.38, 0.28),  # Brown
 					"pillar": Color(0.35, 0.42, 0.3),  # Mossy grey-green
 					"crystal": Color(0.5, 0.95, 0.4)  # Bright green
 				},
-				{
-					&"flame_pearl": 1,
-					&"air_pearl": 1,
-					&"life_pearl": 3,  # 3x weight
-					&"water_pearl": 1
-				}
+				{&"flame_pearl": 1, &"air_pearl": 1, &"life_pearl": 3, &"water_pearl": 1}  # 3x weight
 			),
-			&"water_pearl": FieldThemeConfig.new(
+			&"water_pearl":
+			FieldThemeConfig.new(
 				Color(0.25, 0.45, 0.6),  # Blue ground
 				{
 					"rock": Color(0.7, 0.72, 0.75),  # White-grey
 					"pillar": Color(0.65, 0.68, 0.72),  # Light grey
 					"crystal": Color(0.5, 0.75, 1.0)  # Light blue
 				},
-				{
-					&"flame_pearl": 1,
-					&"air_pearl": 1,
-					&"life_pearl": 1,
-					&"water_pearl": 3  # 3x weight
-				}
+				{&"flame_pearl": 1, &"air_pearl": 1, &"life_pearl": 1, &"water_pearl": 3}  # 3x weight
 			)
 		}
 	return _theme_configs_cache
@@ -151,12 +131,14 @@ func generate_obstacles() -> Array[Dictionary]:
 			var scale_factor: float = _rng.randf_range(0.8, 1.5)
 			var rotation_y: float = _rng.randf_range(0, 360)
 
-			obstacles.append({
-				"type": obstacle_type,
-				"position": pos,
-				"scale": scale_factor,
-				"rotation_y": rotation_y
-			})
+			obstacles.append(
+				{
+					"type": obstacle_type,
+					"position": pos,
+					"scale": scale_factor,
+					"rotation_y": rotation_y
+				}
+			)
 
 	return obstacles
 
@@ -179,11 +161,7 @@ func generate_items() -> Array[Dictionary]:
 		var item_id: StringName = item_types[_rng.randi() % item_types.size()]
 		var quantity: int = _rng.randi_range(1, 3)
 
-		items.append({
-			"item_id": item_id,
-			"position": pos,
-			"quantity": quantity
-		})
+		items.append({"item_id": item_id, "position": pos, "quantity": quantity})
 
 	return items
 
@@ -200,11 +178,7 @@ func generate_spawn_points() -> Array[Vector3]:
 	for i: int in range(4):
 		var angle: float = (i * 90.0 + _rng.randf_range(-15, 15)) * PI / 180.0
 		var radius: float = base_radius + _rng.randf_range(-0.5, 0.5)
-		var pos := Vector3(
-			cos(angle) * radius,
-			1.0,
-			sin(angle) * radius
-		)
+		var pos := Vector3(cos(angle) * radius, 1.0, sin(angle) * radius)
 		spawn_points.append(pos)
 
 	return spawn_points
@@ -249,6 +223,7 @@ func get_obstacle_color(obstacle_type: String) -> Color:
 # =============================================================================
 # Private Helpers
 # =============================================================================
+
 
 func _find_valid_obstacle_position() -> Vector3:
 	## Find a position that doesn't overlap with existing obstacles or center.

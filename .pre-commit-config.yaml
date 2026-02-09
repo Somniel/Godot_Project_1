@@ -7,19 +7,21 @@ repos:
         description: Format GDScript files
         types: [file]
         files: \.(gd)$
+        exclude: ^addons/
       - id: gdlint
         name: gdlint
         description: Lint GDScript files
         types: [file]
         files: \.(gd)$
+        exclude: ^addons/
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.5.0
     hooks:
       - id: trailing-whitespace
-        exclude: \.(gd|tscn|tres)$
+        exclude: (^addons/|\.(gd|tscn|tres)$)
       - id: end-of-file-fixer
-        exclude: \.(tscn|tres)$
+        exclude: (^addons/|\.(tscn|tres)$)
       - id: check-yaml
       - id: check-added-large-files
         args: ['--maxkb=1000']

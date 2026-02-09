@@ -9,6 +9,7 @@ const FIELD_HALF_SIZE: float = 18.0
 ## Maximum valid item quantity for a single world item
 const MAX_ITEM_QUANTITY: int = 999
 
+
 ## Cached CRDT state for a single field
 class FieldState:
 	var generation_seed: int = 0
@@ -62,10 +63,10 @@ class FieldState:
 ## Maps lobby IDs to their cached field states
 var _cache: Dictionary = {}  # int (lobby_id) -> FieldState
 
-
 # =============================================================================
 # Validation Helpers
 # =============================================================================
+
 
 ## Validate that an instance_id matches expected formats:
 ## "gen_{seed}_{index}" or "placed_{steam_id}_{time}_{counter}"
@@ -114,6 +115,7 @@ static func is_valid_placed_entry(entry: Dictionary) -> bool:
 # Cache Operations
 # =============================================================================
 
+
 ## Cache a field's CRDT state before leaving it
 func cache_field(
 	lobby_id: int,
@@ -129,8 +131,7 @@ func cache_field(
 	modifier_steam_id: int = 0
 ) -> void:
 	var state := FieldState.new(
-		generation_seed, origin_lobby_id, origin_gateway,
-		origin_map_name, pearl_type
+		generation_seed, origin_lobby_id, origin_gateway, origin_map_name, pearl_type
 	)
 	state.removed_items = removed_items.duplicate(true)
 	state.placed_items = placed_items.duplicate(true)
@@ -141,12 +142,20 @@ func cache_field(
 
 	_cache[lobby_id] = state
 	print(
-		("FieldStateCache: Cached field for lobby %d "
-		+ "(seed %d, pearl %s, %d removed, %d placed, %d gateways)") % [
-			lobby_id, generation_seed, pearl_type,
-			removed_items.size(), placed_items.size(),
-			gateways.size()
-		]
+		(
+			(
+				"FieldStateCache: Cached field for lobby %d "
+				+ "(seed %d, pearl %s, %d removed, %d placed, %d gateways)"
+			)
+			% [
+				lobby_id,
+				generation_seed,
+				pearl_type,
+				removed_items.size(),
+				placed_items.size(),
+				gateways.size()
+			]
+		)
 	)
 
 
@@ -190,9 +199,7 @@ func cleanup_orphaned_fields(linked_lobby_ids: Array[int]) -> void:
 		remove_cached_state(lobby_id)
 
 	if to_remove.size() > 0:
-		print(
-			"FieldStateCache: Cleaned up %d orphaned fields" % to_remove.size()
-		)
+		print("FieldStateCache: Cleaned up %d orphaned fields" % to_remove.size())
 
 
 ## Get all cached lobby IDs
@@ -209,17 +216,23 @@ func debug_print() -> void:
 	for lobby_id: int in _cache:
 		var state: FieldState = _cache[lobby_id]
 		print(
-			"  - Lobby %d: seed=%d, removed=%d, placed=%d, gateways=%d" % [
-				lobby_id, state.generation_seed,
-				state.removed_items.size(), state.placed_items.size(),
-				state.gateways.size()
-			]
+			(
+				"  - Lobby %d: seed=%d, removed=%d, placed=%d, gateways=%d"
+				% [
+					lobby_id,
+					state.generation_seed,
+					state.removed_items.size(),
+					state.placed_items.size(),
+					state.gateways.size()
+				]
+			)
 		)
 
 
 # =============================================================================
 # Serialization for Network Sync
 # =============================================================================
+
 
 ## Serialize a single cache entry for network transfer
 func serialize_entry(lobby_id: int) -> Dictionary:
@@ -255,6 +268,7 @@ func serialize_all() -> Array[Dictionary]:
 # CRDT Merge (Set Union)
 # =============================================================================
 
+
 ## Merge a serialized cache entry using CRDT set union.
 ## removed_items and placed_items are unioned (any key in either set is kept).
 ## gateway_versions use per-slot max. Always returns true since CRDT merge
@@ -269,23 +283,13 @@ func merge_entry(data: Dictionary) -> bool:
 	var origin_gw: int = data.get("origin_gateway", 0)
 	var origin_name: String = data.get("origin_map_name", "")
 	var pearl_str: String = data.get("pearl_type", "")
-	var pearl_type: StringName = (
-		StringName(pearl_str) if not pearl_str.is_empty() else &""
-	)
+	var pearl_type: StringName = StringName(pearl_str) if not pearl_str.is_empty() else &""
 
 	# Parse incoming CRDT sets
-	var incoming_removed: Dictionary = _parse_dict(
-		data.get("removed_items", {})
-	)
-	var incoming_placed: Dictionary = _parse_dict(
-		data.get("placed_items", {})
-	)
-	var incoming_gw_versions: Array[int] = _parse_gateway_versions(
-		data.get("gateway_versions", [])
-	)
-	var incoming_gateways: Array[Dictionary] = _parse_gateways(
-		data.get("gateways", [])
-	)
+	var incoming_removed: Dictionary = _parse_dict(data.get("removed_items", {}))
+	var incoming_placed: Dictionary = _parse_dict(data.get("placed_items", {}))
+	var incoming_gw_versions: Array[int] = _parse_gateway_versions(data.get("gateway_versions", []))
+	var incoming_gateways: Array[Dictionary] = _parse_gateways(data.get("gateways", []))
 
 	# Validate incoming data
 	incoming_removed = _filter_valid_removed(incoming_removed)
@@ -296,27 +300,19 @@ func merge_entry(data: Dictionary) -> bool:
 		var existing: FieldState = _cache[lobby_id]
 		_union_dict(existing.removed_items, incoming_removed)
 		_union_dict(existing.placed_items, incoming_placed)
-		_merge_gateway_versions(
-			existing.gateway_versions, incoming_gw_versions
-		)
-		_merge_gateways(
-			existing, incoming_gateways, incoming_gw_versions
-		)
+		_merge_gateway_versions(existing.gateway_versions, incoming_gw_versions)
+		_merge_gateways(existing, incoming_gateways, incoming_gw_versions)
 		existing.last_modified = Time.get_datetime_string_from_system(true)
 		existing.last_modified_by = data.get("last_modified_by", 0)
 		print(
-			("FieldStateCache: Merged entry for lobby %d "
-			+ "(seed %d, %d removed, %d placed)") % [
-				lobby_id, seed_val,
-				existing.removed_items.size(),
-				existing.placed_items.size()
-			]
+			(
+				("FieldStateCache: Merged entry for lobby %d " + "(seed %d, %d removed, %d placed)")
+				% [lobby_id, seed_val, existing.removed_items.size(), existing.placed_items.size()]
+			)
 		)
 	else:
 		# New entry — accept as-is
-		var state := FieldState.new(
-			seed_val, origin_lobby, origin_gw, origin_name, pearl_type
-		)
+		var state := FieldState.new(seed_val, origin_lobby, origin_gw, origin_name, pearl_type)
 		state.removed_items = incoming_removed.duplicate(true)
 		state.placed_items = incoming_placed.duplicate(true)
 		state.gateway_versions = incoming_gw_versions.duplicate()
@@ -325,12 +321,13 @@ func merge_entry(data: Dictionary) -> bool:
 		state.last_modified_by = data.get("last_modified_by", 0)
 		_cache[lobby_id] = state
 		print(
-			("FieldStateCache: Added new entry for lobby %d "
-			+ "(seed %d, %d removed, %d placed)") % [
-				lobby_id, seed_val,
-				state.removed_items.size(),
-				state.placed_items.size()
-			]
+			(
+				(
+					"FieldStateCache: Added new entry for lobby %d "
+					+ "(seed %d, %d removed, %d placed)"
+				)
+				% [lobby_id, seed_val, state.removed_items.size(), state.placed_items.size()]
+			)
 		)
 
 	return true
@@ -348,6 +345,7 @@ func merge_entries(entries: Array) -> void:
 # Internal Merge Helpers
 # =============================================================================
 
+
 ## Union source dictionary into target (target gains all keys from source).
 ## For matching keys, existing values are preserved (first-write wins for CRDT).
 static func _union_dict(target: Dictionary, source: Dictionary) -> void:
@@ -357,9 +355,7 @@ static func _union_dict(target: Dictionary, source: Dictionary) -> void:
 
 
 ## Merge gateway_versions arrays: per-slot max
-static func _merge_gateway_versions(
-	local: Array[int], incoming: Array[int]
-) -> void:
+static func _merge_gateway_versions(local: Array[int], incoming: Array[int]) -> void:
 	for i: int in range(mini(local.size(), incoming.size())):
 		if incoming[i] > local[i]:
 			local[i] = incoming[i]
@@ -367,9 +363,7 @@ static func _merge_gateway_versions(
 
 ## Merge gateways: for each slot where incoming version is higher, replace
 static func _merge_gateways(
-	state: FieldState,
-	incoming_gateways: Array[Dictionary],
-	incoming_gw_versions: Array[int]
+	state: FieldState, incoming_gateways: Array[Dictionary], incoming_gw_versions: Array[int]
 ) -> void:
 	for i: int in range(mini(incoming_gateways.size(), 4)):
 		if i < incoming_gw_versions.size() and i < state.gateway_versions.size():
@@ -389,10 +383,7 @@ static func _filter_valid_removed(data: Dictionary) -> Dictionary:
 			if is_valid_instance_id(key as String):
 				result[key] = data[key]
 			else:
-				push_warning(
-					"FieldStateCache: Rejected invalid removed_items key: %s"
-					% str(key)
-				)
+				push_warning("FieldStateCache: Rejected invalid removed_items key: %s" % str(key))
 	return result
 
 
@@ -404,10 +395,7 @@ static func _filter_valid_placed(data: Dictionary) -> Dictionary:
 			@warning_ignore("unsafe_cast")
 			var key_str: String = key as String
 			if not is_valid_instance_id(key_str):
-				push_warning(
-					"FieldStateCache: Rejected invalid placed_items key: %s"
-					% key_str
-				)
+				push_warning("FieldStateCache: Rejected invalid placed_items key: %s" % key_str)
 				continue
 			var entry: Variant = data[key]
 			if entry is Dictionary:
@@ -416,10 +404,7 @@ static func _filter_valid_placed(data: Dictionary) -> Dictionary:
 				if is_valid_placed_entry(entry_dict):
 					result[key] = entry_dict
 				else:
-					push_warning(
-						"FieldStateCache: Rejected invalid placed entry: %s"
-						% key_str
-					)
+					push_warning("FieldStateCache: Rejected invalid placed entry: %s" % key_str)
 	return result
 
 
@@ -451,7 +436,7 @@ static func _parse_gateways(value: Variant) -> Array[Dictionary]:
 	var result: Array[Dictionary] = []
 	if value is Array:
 		@warning_ignore("unsafe_cast")
-		for gw: Variant in (value as Array):
+		for gw: Variant in value as Array:
 			if gw is Dictionary:
 				@warning_ignore("unsafe_cast")
 				result.append((gw as Dictionary).duplicate())
