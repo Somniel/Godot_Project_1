@@ -369,15 +369,15 @@ func travel_to_field(lobby_id: int) -> void:
 		return
 
 	print("MapManager: Traveling to field %d..." % lobby_id)
+
+	# Mark intentional travel FIRST so scenes don't treat disconnect as a drop
+	is_traveling = true
 	travel_started.emit(lobby_id)
 
 	# If we're the town host, our town becomes unjoinable
 	if is_town_host():
 		_own_town_lobby_id = LobbyManager.current_lobby_id
 		print("MapManager: Town %d will be unjoinable while away" % _own_town_lobby_id)
-
-	# Mark intentional travel so scenes don't treat disconnect as a drop
-	is_traveling = true
 
 	# Leave current lobby and join the field
 	NetworkManager.disconnect_peer()
@@ -392,10 +392,10 @@ func travel_to_town(lobby_id: int) -> void:
 		return
 
 	print("MapManager: Traveling to town %d..." % lobby_id)
-	travel_started.emit(lobby_id)
 
-	# Mark intentional travel so scenes don't treat disconnect as a drop
+	# Mark intentional travel FIRST so scenes don't treat disconnect as a drop
 	is_traveling = true
+	travel_started.emit(lobby_id)
 
 	# Leave current field
 	NetworkManager.disconnect_peer()

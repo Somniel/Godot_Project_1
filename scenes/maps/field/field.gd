@@ -710,8 +710,7 @@ func _on_staged_field_ready(_lobby_id: int) -> void:
 
 	# Disconnect server_disconnected before intentional disconnect
 	# to prevent _return_to_menu() from destroying the staged lobby.
-	if multiplayer.server_disconnected.is_connected(_on_server_disconnected):
-		multiplayer.server_disconnected.disconnect(_on_server_disconnected)
+	_prepare_for_travel()
 
 	MapManager.finish_staged_field_transition()
 
@@ -1548,6 +1547,7 @@ func _on_travel_confirm_confirmed() -> void:
 
 		# Cache current field state before leaving
 		_cache_field_state()
+		_prepare_for_travel()
 		if is_town:
 			MapManager.travel_to_player_town(owner_steam_id)
 		elif MapManager.has_cached_field(lobby_id):
