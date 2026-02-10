@@ -577,6 +577,7 @@ func _on_host_travel_confirmed() -> void:
 					% [gateway_id, target_gateway_id]
 				)
 			)
+			_prepare_for_travel()
 			@warning_ignore("return_value_discarded")
 			MapManager.restore_cached_field(lobby_id)
 		else:
@@ -587,6 +588,7 @@ func _on_host_travel_confirmed() -> void:
 					% [lobby_id, gateway_id, target_gateway_id]
 				)
 			)
+			_prepare_for_travel()
 			MapManager.travel_to_field(lobby_id)
 	else:
 		_pending_travel_lobby_id = 0
@@ -629,6 +631,7 @@ func _on_travel_confirm_confirmed() -> void:
 				% [lobby_id, gateway_id, target_gateway_id]
 			)
 		)
+		_prepare_for_travel()
 		MapManager.travel_to_field(lobby_id)
 
 
@@ -1007,6 +1010,7 @@ func _on_field_travel_approved(
 				% [existing_field_lobby, generation_seed, gateway_id]
 			)
 		)
+		_prepare_for_travel()
 		MapManager.travel_to_field(existing_field_lobby)
 	else:
 		# Create new field via staged lobby — track gateway for report
@@ -1042,8 +1046,7 @@ func _on_staged_field_ready(lobby_id: int) -> void:
 	if gw_id < 0:
 		# No gateway tracked — shouldn't happen, but finish anyway
 		push_warning("Town: Staged field ready but no gateway tracked")
-		if multiplayer.server_disconnected.is_connected(_on_server_disconnected):
-			multiplayer.server_disconnected.disconnect(_on_server_disconnected)
+		_prepare_for_travel()
 		MapManager.finish_staged_field_transition()
 		return
 
@@ -1078,8 +1081,7 @@ func _on_staged_field_ready(lobby_id: int) -> void:
 	# Disconnect server_disconnected before the intentional disconnect
 	# to prevent _on_server_disconnected → _return_to_menu() from
 	# destroying the staged lobby when the client peer is closed.
-	if multiplayer.server_disconnected.is_connected(_on_server_disconnected):
-		multiplayer.server_disconnected.disconnect(_on_server_disconnected)
+	_prepare_for_travel()
 
 	# Complete the transition: disconnect + promote + host
 	MapManager.finish_staged_field_transition()

@@ -358,6 +358,14 @@ func _on_server_disconnected() -> void:
 	_return_to_menu()
 
 
+func _prepare_for_travel() -> void:
+	## Disconnect server_disconnected before intentional travel to prevent
+	## the handler from racing with MapManager.is_traveling and sending
+	## the player back to the main menu.
+	if multiplayer.server_disconnected.is_connected(_on_server_disconnected):
+		multiplayer.server_disconnected.disconnect(_on_server_disconnected)
+
+
 func _on_leave_button_pressed() -> void:
 	_return_to_menu()
 
