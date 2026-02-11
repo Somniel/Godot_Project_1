@@ -159,3 +159,31 @@ func test_lobby_join_failed_noop_when_not_traveling() -> void:
 	MapManager._on_lobby_join_failed("test error")
 
 	assert_false(MapManager.is_traveling, "is_traveling should remain false")
+
+
+# =============================================================================
+# rehost_linked_field sets flag
+# =============================================================================
+# rehost_linked_field calls create_lobby(8) which creates a real Steam lobby.
+# The async callback cascades: lobby_created -> NetworkManager.start_host() ->
+# host_started -> MapManager._change_to_current_scene() -> loads game scene.
+# Signal disconnection can't prevent this since NetworkManager independently
+# connects to lobby_created. Flag-setting pattern is identical to others above.
+
+
+func test_rehost_linked_field_sets_flag() -> void:
+	pending("create_lobby creates a real Steam lobby, cannot test without scene change")
+
+
+# =============================================================================
+# find_and_join_field sets flag
+# =============================================================================
+# find_and_join_field uses a callback (_on_rehosted_field_found) which calls
+# change_scene_to_file directly — can't be disconnected for testing.
+# Without Steam, find_field_by_seed calls the callback synchronously with 0,
+# which resets is_traveling and triggers a scene change before the assert.
+# Flag-setting pattern is identical to travel_to_field/travel_to_town above.
+
+
+func test_find_and_join_field_sets_flag() -> void:
+	pending("Callback calls change_scene_to_file directly, cannot test without scene change")

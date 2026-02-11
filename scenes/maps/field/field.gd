@@ -32,6 +32,9 @@ var _pearl_type: StringName = &""
 ## Steam ID of the town owner that created this field (stable identifier)
 var _origin_owner_steam_id: int = 0
 
+## Field type: "linked" (town-linked social) or "deep" (exploration)
+var _field_type: String = ""
+
 ## CRDT grow-only set of removed item instance IDs
 var _current_removed_items: Dictionary = {}
 ## CRDT grow-only set of player-placed items
@@ -42,10 +45,22 @@ var _current_gateway_versions: Array[int] = [0, 0, 0, 0]
 ## Peer ID we requested field state from (0 = none pending)
 var _pending_state_request_peer: int = 0
 
+## Timer for delayed re-host search after host disconnect
+var _rehost_search_timer: Timer = null
+
+## Timer for auto-cleanup of empty deep fields
+var _deep_field_cleanup_timer: Timer = null
+
+## How long (seconds) a deep field stays alive after the last client leaves
+const DEEP_FIELD_CLEANUP_DELAY: float = 30.0
+
 ## Pearl type awaiting server confirmation before consuming (client only)
 var _pending_pearl_consumption: StringName = &""
 ## Gateway ID for which we're awaiting config confirmation (client only)
 var _pending_config_gateway_id: int = -1
+
+## Gateway ID that triggered a staged field creation (for follow travel)
+var _staged_gateway_id: int = -1
 
 
 func _ready() -> void:
@@ -105,10 +120,12 @@ func _connect_field_signals() -> void:
 		@warning_ignore("return_value_discarded")
 		_gateway_config_dialog.town_link_requested.connect(_on_town_link_requested)
 
-	# Client gateway config requests (server only)
+	# Server-only signals
 	if multiplayer.is_server():
 		@warning_ignore("return_value_discarded")
 		NetworkManager.client_gateway_config_requested.connect(_on_client_gateway_config_requested)
+		@warning_ignore("return_value_discarded")
+		NetworkManager.staged_field_lobby_reported.connect(_on_staged_field_lobby_reported)
 
 	# Client-only signals
 	if not multiplayer.is_server():
@@ -156,10 +173,15 @@ func _read_field_metadata() -> void:
 	if not owner_str.is_empty():
 		_origin_owner_steam_id = owner_str.to_int()
 
+	_field_type = LobbyManager.get_lobby_metadata(lobby_id, "field_type")
+
 	var origin_raw: String = LobbyManager.get_lobby_metadata(lobby_id, "origin_lobby_id")
 	print(
 		(
-			"Field: seed=%d, origin=%d (raw='%s'), gateway=%d, origin_name=%s, pearl=%s, owner=%d"
+			(
+				"Field: seed=%d, origin=%d (raw='%s'), gateway=%d, "
+				+ "origin_name=%s, pearl=%s, owner=%d, type=%s"
+			)
 			% [
 				_generation_seed,
 				_origin_lobby_id,
@@ -167,10 +189,21 @@ func _read_field_metadata() -> void:
 				_origin_gateway,
 				_origin_map_name,
 				_pearl_type,
-				_origin_owner_steam_id
+				_origin_owner_steam_id,
+				_field_type
 			]
 		)
 	)
+
+
+func is_linked_field() -> bool:
+	## Check if this is a town-linked (Type 2) field.
+	return _field_type == MapManager.FIELD_TYPE_LINKED
+
+
+func is_deep_field() -> bool:
+	## Check if this is a deep exploration (Type 3) field.
+	return _field_type == MapManager.FIELD_TYPE_DEEP
 
 
 func _is_own_field() -> bool:
@@ -325,6 +358,8 @@ func _update_status() -> void:
 func _on_peer_connected(peer_id: int) -> void:
 	super(peer_id)
 	if multiplayer.is_server():
+		# Cancel deep field cleanup if someone joined
+		_cancel_deep_field_cleanup()
 		# Sync all gateway states to the new peer
 		_sync_all_gateways_to_peer(peer_id)
 		# Sync field cache to the new peer
@@ -337,6 +372,139 @@ func _on_peer_disconnected(peer_id: int) -> void:
 	super(peer_id)
 	if peer_id == _pending_state_request_peer:
 		_pending_state_request_peer = 0
+	# Check if host is now alone on a deep field
+	if multiplayer.is_server() and is_deep_field():
+		_check_deep_field_cleanup()
+
+
+func _on_server_disconnected() -> void:
+	## Override: linked fields attempt dormant restoration instead of
+	## returning to the main menu when the host disconnects.
+	if MapManager.is_traveling:
+		return
+
+	if not is_linked_field():
+		# Deep fields: default behavior — return to menu
+		print("Field: Host disconnected from deep field, returning to menu")
+		_return_to_menu()
+		return
+
+	# Linked field: check if we can re-host
+	if _has_town_link_to_seed(_generation_seed):
+		print("Field: Host disconnected, re-hosting linked field (seed %d)" % _generation_seed)
+		# Save our local CRDT state to town cloud before re-hosting
+		_save_crdt_to_town_cloud_as_client()
+		MapManager.rehost_linked_field(
+			_generation_seed, _origin_gateway, _origin_map_name, _pearl_type, _origin_owner_steam_id
+		)
+	else:
+		# Not linked to our town — wait briefly for a linked player to re-host,
+		# then search for the re-created lobby.
+		print("Field: Host disconnected, waiting for re-host (seed %d)" % _generation_seed)
+		_start_rehost_search_timer()
+
+
+func _has_town_link_to_seed(generation_seed: int) -> bool:
+	## Check if the local player's town has a gateway linking to this seed.
+	var storage: TownCloudStorage = MapManager.ensure_town_storage_loaded()
+	for i: int in range(4):
+		var gw: Dictionary = storage.get_gateway(i)
+		if gw.get("generation_seed", 0) == generation_seed:
+			return true
+	return false
+
+
+func _save_crdt_to_town_cloud_as_client() -> void:
+	## Save the client's local CRDT state to their town's Steam Cloud.
+	## Called before re-hosting so the new field instance has latest state.
+	if _generation_seed <= 0:
+		return
+	var gateways: Array[Dictionary] = _cloud_persistence.serialize_gateways(_gateways)
+	@warning_ignore("return_value_discarded")
+	_cloud_persistence.save_to_town_cloud(
+		_generation_seed,
+		_pearl_type,
+		_current_removed_items,
+		_current_placed_items,
+		_current_gateway_versions,
+		gateways
+	)
+	print(
+		(
+			("Field: Saved client CRDT to town cloud before re-host " + "(%d removed, %d placed)")
+			% [_current_removed_items.size(), _current_placed_items.size()]
+		)
+	)
+
+
+func _start_rehost_search_timer() -> void:
+	## Wait before searching for a re-hosted field lobby.
+	## Gives the linked player time to create the new lobby.
+	if _rehost_search_timer != null:
+		return
+	_rehost_search_timer = Timer.new()
+	_rehost_search_timer.wait_time = 3.0
+	_rehost_search_timer.one_shot = true
+	@warning_ignore("return_value_discarded")
+	_rehost_search_timer.timeout.connect(_on_rehost_search_timeout)
+	add_child(_rehost_search_timer)
+	_rehost_search_timer.start()
+
+
+func _on_rehost_search_timeout() -> void:
+	## Timer expired — search for the re-hosted field lobby.
+	if _rehost_search_timer != null:
+		_rehost_search_timer.queue_free()
+		_rehost_search_timer = null
+	print("Field: Searching for re-hosted field (seed %d)" % _generation_seed)
+	MapManager.find_and_join_field(_generation_seed)
+
+
+func _check_deep_field_cleanup() -> void:
+	## Start cleanup timer if the host is alone on a deep field.
+	if _deep_field_cleanup_timer != null:
+		return  # Already running
+	# Count connected peers (excluding ourselves)
+	var peer_count: int = _players_container.get_child_count()
+	if peer_count > 1:
+		return  # Other players still present
+	print("Field: Deep field empty, starting %ds cleanup timer" % int(DEEP_FIELD_CLEANUP_DELAY))
+	_deep_field_cleanup_timer = Timer.new()
+	_deep_field_cleanup_timer.wait_time = DEEP_FIELD_CLEANUP_DELAY
+	_deep_field_cleanup_timer.one_shot = true
+	@warning_ignore("return_value_discarded")
+	_deep_field_cleanup_timer.timeout.connect(_on_deep_field_cleanup_timeout)
+	add_child(_deep_field_cleanup_timer)
+	_deep_field_cleanup_timer.start()
+
+
+func _cancel_deep_field_cleanup() -> void:
+	## Cancel the cleanup timer if a new player joins.
+	if _deep_field_cleanup_timer == null:
+		return
+	print("Field: Player joined, cancelling deep field cleanup timer")
+	_deep_field_cleanup_timer.queue_free()
+	_deep_field_cleanup_timer = null
+
+
+func _on_deep_field_cleanup_timeout() -> void:
+	## Timer expired — auto-return to origin map.
+	_deep_field_cleanup_timer = null
+	print("Field: Deep field cleanup — returning to origin")
+	_cache_field_state()
+	_prepare_for_travel()
+	# Return to the map we came from (origin)
+	if _origin_owner_steam_id > 0:
+		MapManager.set_travel_source(
+			LobbyManager.current_lobby_id,
+			_get_arrival_gateway_id(),
+			_origin_gateway,
+			"town",
+			_origin_owner_steam_id
+		)
+		MapManager.travel_to_player_town(_origin_owner_steam_id)
+	else:
+		_return_to_menu()
 
 
 func _on_travel_confirm_cancelled() -> void:
@@ -346,6 +514,12 @@ func _on_travel_confirm_cancelled() -> void:
 
 
 func _exit_tree() -> void:
+	if _rehost_search_timer != null:
+		_rehost_search_timer.queue_free()
+		_rehost_search_timer = null
+	if _deep_field_cleanup_timer != null:
+		_deep_field_cleanup_timer.queue_free()
+		_deep_field_cleanup_timer = null
 	_disconnect_shared_signals()
 	_disconnect_field_signals()
 
@@ -371,6 +545,8 @@ func _disconnect_field_signals() -> void:
 		NetworkManager.gateway_config_rejected.disconnect(_on_gateway_config_rejected)
 	if NetworkManager.field_crdt_received.is_connected(_on_field_crdt_received):
 		NetworkManager.field_crdt_received.disconnect(_on_field_crdt_received)
+	if NetworkManager.staged_field_lobby_reported.is_connected(_on_staged_field_lobby_reported):
+		NetworkManager.staged_field_lobby_reported.disconnect(_on_staged_field_lobby_reported)
 	if MapManager.staged_field_ready.is_connected(_on_staged_field_ready):
 		MapManager.staged_field_ready.disconnect(_on_staged_field_ready)
 
@@ -691,6 +867,9 @@ func _on_gateway_travel_create_requested(
 	# Set travel source so destination knows where we came from
 	MapManager.set_travel_source(LobbyManager.current_lobby_id, gateway.gateway_id, -1, "field")
 
+	# Track the source gateway so _on_staged_field_ready can update it
+	_staged_gateway_id = gateway.gateway_id
+
 	# Cache current field state before leaving
 	_cache_field_state()
 
@@ -700,19 +879,70 @@ func _on_gateway_travel_create_requested(
 		LobbyManager.current_lobby_id,
 		gateway.gateway_id,
 		"Field %d" % _generation_seed,  # Pass current field name as origin
-		pearl_type
+		pearl_type,
+		0,
+		MapManager.FIELD_TYPE_DEEP
 	)
 
 
-func _on_staged_field_ready(_lobby_id: int) -> void:
+func _on_staged_field_ready(lobby_id: int) -> void:
 	## Handle staged field lobby creation for field-to-field travel.
-	## No gateway update or server report needed — just finish transition.
+	## Updates the source gateway with the new lobby ID so remaining
+	## players can follow through the same gateway.
+
+	# Update the source gateway with the destination lobby ID
+	if _staged_gateway_id >= 0 and _staged_gateway_id < _gateways.size():
+		var gw: Gateway = _gateways[_staged_gateway_id]
+		gw.set_link(lobby_id, gw.linked_map_name, -1)
+
+		if multiplayer.is_server():
+			# Host: broadcast the updated gateway directly
+			NetworkManager.broadcast_gateway_state(
+				_staged_gateway_id,
+				lobby_id,
+				gw.linked_map_name,
+				gw.generation_seed,
+				gw.pearl_type,
+				-1
+			)
+			# Re-cache field state with updated gateway link
+			_cache_field_state()
+			print("Field: Updated gateway %d with field lobby %d" % [_staged_gateway_id, lobby_id])
+		else:
+			# Client: report lobby ID to server for gateway update
+			NetworkManager.report_staged_field_lobby.rpc_id(1, _staged_gateway_id, lobby_id)
+
+	_staged_gateway_id = -1
 
 	# Disconnect server_disconnected before intentional disconnect
 	# to prevent _return_to_menu() from destroying the staged lobby.
 	_prepare_for_travel()
 
 	MapManager.finish_staged_field_transition()
+
+
+func _on_staged_field_lobby_reported(_peer_id: int, gateway_id: int, lobby_id: int) -> void:
+	## Server handler: a client reports a newly created deep field lobby.
+	## Updates the gateway so other players can follow.
+	if not multiplayer.is_server():
+		return
+	if gateway_id < 0 or gateway_id >= _gateways.size():
+		return
+
+	var gw: Gateway = _gateways[gateway_id]
+	if not gw.has_link():
+		return
+
+	gw.set_link(lobby_id, gw.linked_map_name, -1)
+
+	NetworkManager.broadcast_gateway_state(
+		gateway_id, lobby_id, gw.linked_map_name, gw.generation_seed, gw.pearl_type, -1
+	)
+
+	# Re-cache field state with updated gateway link
+	_cache_field_state()
+
+	print("Field: Server updated gateway %d with lobby %d (client report)" % [gateway_id, lobby_id])
 
 
 func _on_gateway_config_cancelled() -> void:

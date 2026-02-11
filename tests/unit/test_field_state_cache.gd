@@ -613,3 +613,58 @@ func test_cleanup_orphaned_fields_preserves_linked() -> void:
 
 	assert_true(_cache.has_cached_state(100))
 	assert_true(_cache.has_cached_state(200))
+
+
+# =============================================================================
+# Field Type Metadata
+# =============================================================================
+
+
+func test_cache_field_stores_field_type() -> void:
+	_cache.cache_field(
+		100, 42, 200, 0, "Town", &"flame_pearl", {}, {}, [0, 0, 0, 0], [], 0, "linked"
+	)
+	var state: FieldStateCache.FieldState = _cache.get_cached_state(100)
+	assert_eq(state.field_type, "linked", "Field type should be stored")
+
+
+func test_cache_field_defaults_field_type_to_empty() -> void:
+	_cache_default(100)
+	var state: FieldStateCache.FieldState = _cache.get_cached_state(100)
+	assert_eq(state.field_type, "", "Field type should default to empty string")
+
+
+func test_field_type_survives_serialization_roundtrip() -> void:
+	_cache.cache_field(100, 42, 200, 1, "Origin", &"air_pearl", {}, {}, [0, 0, 0, 0], [], 0, "deep")
+	var serialized: Dictionary = _cache.serialize_entry(100)
+	assert_eq(serialized["field_type"], "deep", "Serialized data should include field_type")
+
+	# Merge into fresh cache
+	var cache2 := FieldStateCache.new()
+	@warning_ignore("return_value_discarded")
+	cache2.merge_entry(serialized)
+
+	var state: FieldStateCache.FieldState = cache2.get_cached_state(100)
+	assert_eq(state.field_type, "deep", "Field type should survive roundtrip")
+
+
+func test_merge_new_entry_preserves_field_type() -> void:
+	var data: Dictionary = _make_merge_data(100, 42)
+	data["field_type"] = "linked"
+
+	@warning_ignore("return_value_discarded")
+	_cache.merge_entry(data)
+
+	var state: FieldStateCache.FieldState = _cache.get_cached_state(100)
+	assert_eq(state.field_type, "linked", "Merged new entry should preserve field_type")
+
+
+func test_merge_missing_field_type_defaults_to_empty() -> void:
+	# _make_merge_data does not include field_type key
+	var data: Dictionary = _make_merge_data(100, 42)
+
+	@warning_ignore("return_value_discarded")
+	_cache.merge_entry(data)
+
+	var state: FieldStateCache.FieldState = _cache.get_cached_state(100)
+	assert_eq(state.field_type, "", "Missing field_type should default to empty")

@@ -17,6 +17,7 @@ class FieldState:
 	var origin_gateway: int = 0
 	var origin_map_name: String = ""
 	var pearl_type: StringName = &""
+	var field_type: String = ""  # "linked" (Type 2) or "deep" (Type 3)
 	var last_modified: String = ""  # ISO timestamp
 	var last_modified_by: int = 0  # Steam ID of last modifier
 	## Grow-only set of removed item instance IDs.
@@ -49,13 +50,15 @@ class FieldState:
 		p_origin_lobby: int = 0,
 		p_origin_gateway: int = 0,
 		p_origin_name: String = "",
-		p_pearl_type: StringName = &""
+		p_pearl_type: StringName = &"",
+		p_field_type: String = ""
 	) -> void:
 		generation_seed = p_seed
 		origin_lobby_id = p_origin_lobby
 		origin_gateway = p_origin_gateway
 		origin_map_name = p_origin_name
 		pearl_type = p_pearl_type
+		field_type = p_field_type
 		last_modified = ""
 		last_modified_by = 0
 
@@ -128,10 +131,11 @@ func cache_field(
 	placed_items: Dictionary,
 	gateway_versions: Array[int],
 	gateways: Array[Dictionary],
-	modifier_steam_id: int = 0
+	modifier_steam_id: int = 0,
+	field_type: String = ""
 ) -> void:
 	var state := FieldState.new(
-		generation_seed, origin_lobby_id, origin_gateway, origin_map_name, pearl_type
+		generation_seed, origin_lobby_id, origin_gateway, origin_map_name, pearl_type, field_type
 	)
 	state.removed_items = removed_items.duplicate(true)
 	state.placed_items = placed_items.duplicate(true)
@@ -247,6 +251,7 @@ func serialize_entry(lobby_id: int) -> Dictionary:
 		"origin_gateway": state.origin_gateway,
 		"origin_map_name": state.origin_map_name,
 		"pearl_type": String(state.pearl_type),
+		"field_type": state.field_type,
 		"last_modified": state.last_modified,
 		"last_modified_by": state.last_modified_by,
 		"removed_items": state.removed_items.duplicate(true),
@@ -284,6 +289,7 @@ func merge_entry(data: Dictionary) -> bool:
 	var origin_name: String = data.get("origin_map_name", "")
 	var pearl_str: String = data.get("pearl_type", "")
 	var pearl_type: StringName = StringName(pearl_str) if not pearl_str.is_empty() else &""
+	var field_type: String = data.get("field_type", "")
 
 	# Parse incoming CRDT sets
 	var incoming_removed: Dictionary = _parse_dict(data.get("removed_items", {}))
@@ -312,7 +318,9 @@ func merge_entry(data: Dictionary) -> bool:
 		)
 	else:
 		# New entry — accept as-is
-		var state := FieldState.new(seed_val, origin_lobby, origin_gw, origin_name, pearl_type)
+		var state := FieldState.new(
+			seed_val, origin_lobby, origin_gw, origin_name, pearl_type, field_type
+		)
 		state.removed_items = incoming_removed.duplicate(true)
 		state.placed_items = incoming_placed.duplicate(true)
 		state.gateway_versions = incoming_gw_versions.duplicate()
