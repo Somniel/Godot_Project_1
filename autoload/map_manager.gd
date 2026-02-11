@@ -27,6 +27,10 @@ const MAP_TYPE_NONE: String = ""
 const MAP_TYPE_TOWN: String = "town"
 const MAP_TYPE_FIELD: String = "field"
 
+## Field type constants (Type 2 = linked, Type 3 = deep)
+const FIELD_TYPE_LINKED: String = "linked"
+const FIELD_TYPE_DEEP: String = "deep"
+
 ## Scene paths
 const TOWN_SCENE_PATH: String = "res://scenes/maps/town/town.tscn"
 const FIELD_SCENE_PATH: String = "res://scenes/maps/field/field.tscn"
@@ -258,6 +262,7 @@ func cache_current_field(
 	var gateway_str: String = LobbyManager.get_lobby_metadata(lobby_id, "origin_gateway")
 	var origin_name: String = LobbyManager.get_lobby_metadata(lobby_id, "origin_map_name")
 	var pearl_str: String = LobbyManager.get_lobby_metadata(lobby_id, "pearl_type")
+	var field_type_str: String = LobbyManager.get_lobby_metadata(lobby_id, "field_type")
 
 	var gen_seed: int = seed_str.to_int() if not seed_str.is_empty() else 0
 	var origin_lobby: int = origin_str.to_int() if not origin_str.is_empty() else 0
@@ -275,7 +280,8 @@ func cache_current_field(
 		placed_items,
 		gateway_versions,
 		gateways,
-		modifier_steam_id
+		modifier_steam_id,
+		field_type_str
 	)
 
 
@@ -302,6 +308,7 @@ func restore_cached_field(old_lobby_id: int) -> bool:
 	_pending_field_origin_gateway = state.origin_gateway
 	_pending_field_origin_name = state.origin_map_name
 	_pending_field_pearl_type = state.pearl_type
+	_pending_field_type = state.field_type
 	_creating_field = true
 	_restoring_field = true
 	_restoring_field_old_lobby_id = old_lobby_id
@@ -437,17 +444,22 @@ func travel_to_player_town(owner_steam_id: int) -> void:
 
 
 ## Create a new field and travel to it (host only)
+## field_type: FIELD_TYPE_LINKED (from town) or FIELD_TYPE_DEEP (from field)
 func create_field(
 	generation_seed: int,
 	origin_lobby_id: int,
 	origin_gateway: int,
 	origin_name: String = "",
 	pearl_type: StringName = &"",
-	origin_owner_steam_id: int = 0
+	origin_owner_steam_id: int = 0,
+	field_type: String = FIELD_TYPE_LINKED
 ) -> void:
 	print(
 		(
-			"MapManager: Creating field with seed %d, pearl %s " % [generation_seed, pearl_type]
+			(
+				"MapManager: Creating %s field with seed %d, pearl %s "
+				% [field_type, generation_seed, pearl_type]
+			)
 			+ "from gateway %d..." % origin_gateway
 		)
 	)
@@ -459,6 +471,7 @@ func create_field(
 	_pending_field_origin_name = origin_name
 	_pending_field_pearl_type = pearl_type
 	_pending_field_origin_owner = origin_owner_steam_id
+	_pending_field_type = field_type
 	_creating_field = true
 
 	# If we're the town host, save the town lobby ID so we can return
@@ -487,6 +500,58 @@ func rehost_own_town() -> void:
 	_rehost_own_town()
 
 
+## Re-host a linked field after the original host disconnected.
+## The caller is a client whose town links to this field's seed.
+## CRDT state is loaded from town cloud when the field scene starts.
+func rehost_linked_field(
+	generation_seed: int,
+	origin_gateway: int,
+	origin_map_name: String,
+	pearl_type: StringName,
+	origin_owner_steam_id: int
+) -> void:
+	print("MapManager: Re-hosting linked field (seed %d)..." % generation_seed)
+
+	_pending_field_seed = generation_seed
+	# Use our own town as origin since we're becoming the new host
+	_pending_field_origin_lobby = _own_town_lobby_id
+	_pending_field_origin_gateway = origin_gateway
+	_pending_field_origin_name = origin_map_name
+	_pending_field_pearl_type = pearl_type
+	_pending_field_origin_owner = origin_owner_steam_id
+	_pending_field_type = FIELD_TYPE_LINKED
+	_creating_field = true
+
+	is_traveling = true
+
+	NetworkManager.disconnect_peer()
+	LobbyManager.leave_lobby()
+	LobbyManager.create_lobby(8)
+
+
+## Attempt to join an existing field by generation seed.
+## Used by non-linked clients after a linked field's host disconnects.
+## Calls callback(lobby_id: int) — 0 means not found.
+func find_and_join_field(generation_seed: int) -> void:
+	print("MapManager: Searching for re-hosted field (seed %d)..." % generation_seed)
+	is_traveling = true
+	NetworkManager.disconnect_peer()
+	LobbyManager.leave_lobby()
+	LobbyManager.find_field_by_seed(generation_seed, _on_rehosted_field_found)
+
+
+func _on_rehosted_field_found(lobby_id: int) -> void:
+	## Callback from find_field_by_seed after a host migration search.
+	if lobby_id > 0:
+		print("MapManager: Found re-hosted field %d, joining..." % lobby_id)
+		LobbyManager.join_lobby(lobby_id)
+	else:
+		print("MapManager: Re-hosted field not found, returning to menu")
+		is_traveling = false
+		@warning_ignore("return_value_discarded")
+		get_tree().change_scene_to_file(MAIN_MENU_PATH)
+
+
 # =============================================================================
 # Internal State
 # =============================================================================
@@ -497,6 +562,7 @@ var _pending_field_origin_gateway: int = 0
 var _pending_field_origin_name: String = ""
 var _pending_field_pearl_type: StringName = &""
 var _pending_field_origin_owner: int = 0
+var _pending_field_type: String = ""
 var _creating_field: bool = false
 var _restoring_field: bool = false
 var _restoring_field_old_lobby_id: int = 0
@@ -657,6 +723,8 @@ func _setup_field_metadata() -> void:
 	LobbyManager.set_lobby_metadata("origin_map_name", _pending_field_origin_name)
 	@warning_ignore("return_value_discarded")
 	LobbyManager.set_lobby_metadata("pearl_type", str(_pending_field_pearl_type))
+	@warning_ignore("return_value_discarded")
+	LobbyManager.set_lobby_metadata("field_type", _pending_field_type)
 
 	# Store origin owner Steam ID so field can determine ownership without lobby lookup
 	var origin_owner: int = _pending_field_origin_owner
@@ -687,6 +755,8 @@ func _setup_staged_field_metadata(lobby_id: int) -> void:
 	LobbyManager.set_staged_lobby_metadata("origin_map_name", _pending_field_origin_name)
 	@warning_ignore("return_value_discarded")
 	LobbyManager.set_staged_lobby_metadata("pearl_type", str(_pending_field_pearl_type))
+	@warning_ignore("return_value_discarded")
+	LobbyManager.set_staged_lobby_metadata("field_type", _pending_field_type)
 
 	# Store origin owner Steam ID so field can determine ownership
 	var origin_owner: int = _pending_field_origin_owner

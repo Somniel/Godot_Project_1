@@ -222,6 +222,66 @@ func _spawn_initial_items() -> void:
 	print("Town: Spawned %d initial pearls (one of each type)" % pearl_spawns.size())
 
 
+func _restore_placed_entities() -> void:
+	## Restore player-placed entities from town cloud storage on load.
+	if not multiplayer.is_server():
+		return
+	if _town_storage == null:
+		return
+
+	var entities: Array = _town_storage.get_entities()
+	if entities.is_empty():
+		return
+
+	var count: int = 0
+	for entity: Variant in entities:
+		if not entity is Dictionary:
+			continue
+		@warning_ignore("unsafe_cast")
+		var data: Dictionary = entity as Dictionary
+		var item_id_str: String = data.get("item_id", "")
+		if item_id_str.is_empty():
+			continue
+		var item_id: StringName = StringName(item_id_str)
+		var pos_dict: Variant = data.get("position", {})
+		if not pos_dict is Dictionary:
+			continue
+		@warning_ignore("unsafe_cast")
+		var pd: Dictionary = pos_dict as Dictionary
+		var pos := Vector3(pd.get("x", 0.0), pd.get("y", 0.0), pd.get("z", 0.0))
+		var qty: int = data.get("quantity", 1)
+		var iid: String = data.get("instance_id", "")
+		_spawn_item_at(item_id, pos, qty, iid)
+		count += 1
+
+	if count > 0:
+		print("Town: Restored %d placed entities from cloud" % count)
+
+
+func _track_item_placement(item_id: StringName, pos: Vector3, quantity: int) -> String:
+	## Record dropped item as a persistent town entity.
+	var iid: String = _generate_placed_id()
+	var entity: Dictionary = {
+		"instance_id": iid,
+		"item_id": str(item_id),
+		"position": {"x": pos.x, "y": pos.y, "z": pos.z},
+		"quantity": quantity,
+		"timestamp": int(Time.get_unix_time_from_system())
+	}
+	if _town_storage != null:
+		_town_storage.add_entity(entity)
+	return iid
+
+
+func _track_item_removal(world_item: WorldItem) -> void:
+	## Remove picked-up item from persistent town entities.
+	if world_item.instance_id.is_empty():
+		return
+	if _town_storage != null:
+		@warning_ignore("return_value_discarded")
+		_town_storage.remove_entity({"instance_id": world_item.instance_id})
+
+
 # =============================================================================
 # Gateway System
 # =============================================================================
@@ -556,7 +616,8 @@ func _on_host_travel_confirmed() -> void:
 			gateway_id if gateway_id >= 0 else 0,
 			get_town_name(),
 			pearl_type,
-			SteamManager.get_steam_id()
+			SteamManager.get_steam_id(),
+			MapManager.FIELD_TYPE_LINKED
 		)
 	elif _pending_travel_lobby_id > 0:
 		var lobby_id: int = _pending_travel_lobby_id
@@ -707,9 +768,11 @@ func _finish_town_loading() -> void:
 	# Restore gateway links from saved state
 	_restore_gateway_links()
 
-	# Spawn initial items if this is a new town
+	# Spawn initial items if this is a new town, otherwise restore entities
 	if _town_storage.is_new_town():
 		_spawn_initial_items()
+	else:
+		_restore_placed_entities()
 
 	# Update lobby metadata with current town name
 	var town_name: String = _town_storage.get_town_name()
@@ -1023,6 +1086,7 @@ func _on_field_travel_approved(
 				% [generation_seed, pearl_type, gateway_id, host_steam_id]
 			)
 		)
+		_prepare_for_travel()
 		_staged_gateway_id = gateway_id
 		var pearl_sn: StringName = StringName(pearl_type) if not pearl_type.is_empty() else &""
 		MapManager.create_field(
@@ -1031,7 +1095,8 @@ func _on_field_travel_approved(
 			gateway_id,
 			get_town_name(),
 			pearl_sn,
-			host_steam_id
+			host_steam_id,
+			MapManager.FIELD_TYPE_LINKED
 		)
 
 
