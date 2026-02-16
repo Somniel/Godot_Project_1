@@ -111,6 +111,7 @@ func start_client() -> void:
 
 
 func disconnect_peer() -> void:
+	var was_active: bool = _is_networking_active
 	if _multiplayer_peer != null:
 		print("NetworkManager: Disconnecting peer")
 		_multiplayer_peer.close()
@@ -119,7 +120,8 @@ func disconnect_peer() -> void:
 	multiplayer.multiplayer_peer = null
 	_is_networking_active = false
 	_client_connected = false
-	disconnected.emit()
+	if was_active:
+		disconnected.emit()
 
 
 func is_server() -> bool:
