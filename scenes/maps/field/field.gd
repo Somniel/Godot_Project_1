@@ -380,6 +380,20 @@ func _on_peer_disconnected(peer_id: int) -> void:
 func _on_server_disconnected() -> void:
 	## Override: linked fields attempt dormant restoration instead of
 	## returning to the main menu when the host disconnects.
+	print(
+		(
+			(
+				"Field: server_disconnected! is_traveling=%s, is_linked=%s, "
+				+ "has_peer=%s, field_type='%s'"
+			)
+			% [
+				MapManager.is_traveling,
+				is_linked_field(),
+				multiplayer.has_multiplayer_peer(),
+				_field_type
+			]
+		)
+	)
 	if MapManager.is_traveling:
 		return
 

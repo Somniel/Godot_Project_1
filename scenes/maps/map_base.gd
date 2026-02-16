@@ -352,6 +352,12 @@ func _on_peer_disconnected(peer_id: int) -> void:
 
 
 func _on_server_disconnected() -> void:
+	print(
+		(
+			"%s: server_disconnected! is_traveling=%s, has_peer=%s"
+			% [_get_map_type_name(), MapManager.is_traveling, multiplayer.has_multiplayer_peer()]
+		)
+	)
 	if MapManager.is_traveling:
 		return  # Intentional disconnect during travel — don't return to menu
 	print("%s: Server disconnected" % _get_map_type_name())
